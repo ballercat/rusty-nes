@@ -9,53 +9,44 @@ pub mod nescpu {
     pub struct Processor {
         pub mem: [u8;0x10000],
     }
-    pub fn power() -> Processor {
-        Processor {
-            mem: [0;0x10000],
-        }
-    }
 
-    pub fn write(cpu: &mut Processor, address: usize, value: u8) {
-        cpu.mem[address] = value;
-
-        // Internal RAM mirrors
-        if address <= RAM_TOP {
-            cpu.mem[address + 0x800] = value;
-            // cpu.mem[address + 0x800*2] = value;
-            // cpu.mem[address + 0x800*3] = value;
+    impl Processor {
+        pub fn new() -> Processor {
+            Processor { mem: [0;0x10000], }
         }
 
-        // if address <= 0x2007 && adress >= 0x2000 {
-        // }
-    }
-
-    pub fn read(cpu: &mut Processor, address: usize) -> u8 {
-        if address < MIRROR_TOP {
-            return cpu.mem[address % RAM_TOP];
+        pub fn write(&mut self, address: usize, value: u8) {
+            self.mem[address] = value;
         }
 
-        cpu.mem[address]
+        pub fn read(&self, address: usize) -> u8 {
+            if address < MIRROR_TOP {
+                return self.mem[address % RAM_TOP];
+            }
+            self.mem[address]
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use nescpu::Processor;
 
     #[test]
     fn test_power() {
-        let cpu = nescpu::power();
+        let cpu = Processor::new();
         assert_eq!(cpu.mem.len(), 0x10000);
     }
 
     #[test]
     fn test_read_write() {
-        let mut cpu = nescpu::power();
-        nescpu::write(&mut cpu, 0, 24);
+        let mut cpu = Processor::new();
+        cpu.write(0, 24);
 
-        assert_eq!(nescpu::read(&mut cpu, 0), 24);
-        assert_eq!(nescpu::read(&mut cpu,0x800), 24);
-        assert_eq!(nescpu::read(&mut cpu,0x800*2), 24);
-        assert_eq!(nescpu::read(&mut cpu,0x800*3), 24);
+        assert_eq!(cpu.read(0), 24);
+        assert_eq!(cpu.read(0x800), 24);
+        assert_eq!(cpu.read(0x800*2), 24);
+        assert_eq!(cpu.read(0x800*3), 24);
     }
 }
