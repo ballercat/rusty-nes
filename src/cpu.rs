@@ -111,7 +111,8 @@ pub mod nescpu {
 
     pub fn adc(state: State, operand: u8) -> State {
         let carry = state.status & 1;
-        let (result, ..) = state.a.overflowing_add(operand + carry);
+        let (mut result, ..) = state.a.overflowing_add(operand);
+        result += carry;
         State {
             a: result,
             pc: state.pc + 2,
@@ -286,8 +287,16 @@ mod test {
         assert_eq!(state.a, 0);
         assert_eq!(state.status, Z_FLAG | C_FLAG);
 
-        let state = nescpu::adc(State { a: 0xFF, ..base }, 0xFF);
-        assert_eq!(state.a, 0xFE);
+        // This will check the overflow logic of 0xFF + 0xFF + 1 = 0xFF
+        let state = nescpu::adc(
+            State {
+                a: 0xFF,
+                status: C_FLAG,
+                ..base
+            },
+            0xFF,
+        );
+        assert_eq!(state.a, 0xFF);
         assert_eq!(state.status, N_FLAG | C_FLAG);
 
         let state = nescpu::adc(State { a: 0x50, ..base }, 0x50);
