@@ -39,12 +39,6 @@ pub mod nescpu {
         }
     }
 
-    pub enum Opcode {
-        ADC,
-        AND,
-        NOP,
-    }
-
     pub enum Mode {
         Immediate,
         Implied,
@@ -57,6 +51,9 @@ pub mod nescpu {
         /* flags    */ u8,
     );
 
+    pub type Opcode = fn(State, u8) -> State;
+
+    #[derive(Copy, Clone)]
     pub struct State {
         pub a: u8,
         pub pc: usize,
@@ -118,13 +115,34 @@ pub mod nescpu {
         State {
             a: result,
             pc: state.pc + 2,
-            x: state.x,
-            y: state.y,
             status: nescpu::calc_status(
                 state.status,
                 (state.a, operand, result, N_FLAG | Z_FLAG | C_FLAG | V_FLAG),
             ),
             cycles: state.cycles + 2,
+            ..state
+        }
+    }
+
+    pub fn and(state: State, operand: u8) -> State {
+        let result = state.a & operand;
+        State {
+            a: result,
+            pc: state.pc + 2,
+            status: nescpu::calc_status(
+                state.status,
+                (state.a, operand, result, N_FLAG | Z_FLAG),
+            ),
+            cycles: state.cycles + 2,
+            ..state
+        }
+    }
+
+    pub fn nop(state: State, _operand: u8) -> State {
+        State {
+            pc: state.pc + 1,
+            cycles: state.cycles + 1,
+            ..state
         }
     }
 
@@ -148,33 +166,9 @@ pub mod nescpu {
         pub fn exec(&mut self) {
             let State { pc, .. } = self.state;
             let (opcode, mode) = self.decode(self.mem.read(pc));
-            match opcode {
-                Opcode::ADC => {
-                    let State { a, status, .. } = self.state;
-                    let operand = self.lookup(mode);
-                    let carry = status & 1;
-                    let result = (a + operand + carry) & 0xFF;
+            let operand = self.lookup(mode);
 
-                    self.state.cycles += 2;
-                    self.state.status = nescpu::calc_status(
-                        status,
-                        (a, operand, result, N_FLAG | Z_FLAG | C_FLAG | V_FLAG),
-                    );
-                    self.state.a = result;
-                }
-                Opcode::AND => {
-                    let State { a, status, .. } = self.state;
-                    let operand = self.lookup(mode);
-                    let result = a & operand;
-                    self.state.cycles += 2;
-                    self.state.status = nescpu::calc_status(
-                        status,
-                        (a, operand, result, N_FLAG | Z_FLAG),
-                    );
-                    self.state.a = result;
-                }
-                _ => {}
-            }
+            self.state = opcode(self.state, operand);
         }
 
         pub fn lookup(&mut self, mode: Mode) -> u8 {
@@ -195,20 +189,20 @@ pub mod nescpu {
 
             match a {
                 1 => (
-                    Opcode::AND,
+                    nescpu::and,
                     match b {
                         0..=7 => Mode::Immediate,
                         _ => Mode::Implied,
                     },
                 ),
                 3 => (
-                    Opcode::ADC,
+                    nescpu::adc,
                     match b {
                         0..=7 => Mode::Immediate,
                         _ => Mode::Implied,
                     },
                 ),
-                _ => (Opcode::NOP, Mode::Implied),
+                _ => (nescpu::nop, Mode::Implied),
             }
         }
     }
@@ -275,6 +269,7 @@ mod test {
             status: 0,
             cycles: 0,
         };
+        // a + operand + carry_flag
         let state = nescpu::adc(
             State {
                 a: 1,
@@ -283,14 +278,11 @@ mod test {
             },
             1,
         );
-
-        // a + operand + carry_flag
         assert_eq!(state.a, 3);
         assert_eq!(state.pc, 2);
         assert_eq!(state.cycles, 2);
 
         let state = nescpu::adc(State { a: 1, ..base }, 0xFF);
-
         assert_eq!(state.a, 0);
         assert_eq!(state.status, Z_FLAG | C_FLAG);
 
@@ -299,8 +291,32 @@ mod test {
         assert_eq!(state.status, N_FLAG | C_FLAG);
 
         let state = nescpu::adc(State { a: 0x50, ..base }, 0x50);
-
         assert_eq!(state.a, 0xa0);
         assert_eq!(state.status, N_FLAG | V_FLAG);
+    }
+
+    #[test]
+    fn test_and() {
+        let base = State {
+            pc: 0,
+            a: 0,
+            x: 0,
+            y: 0,
+            status: 0,
+            cycles: 0,
+        };
+        let state = nescpu::and(State { a: 0b11, ..base }, 0b10);
+        assert_eq!(state.a, 0b10);
+        assert_eq!(state.cycles, 2);
+
+        // Negative flag
+        let state = nescpu::and(State { a: 0xff, ..base }, N_FLAG);
+        assert_eq!(state.a, 0b1000_0000);
+        assert_eq!(state.status, N_FLAG);
+
+        // Zero flag
+        let state = nescpu::and(State { a: 0xff, ..base }, 0);
+        assert_eq!(state.a, 0);
+        assert_eq!(state.status, Z_FLAG);
     }
 }
