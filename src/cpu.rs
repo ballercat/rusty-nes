@@ -26,6 +26,22 @@ pub mod nescpu {
         Implied,
     }
 
+    pub type Operation = (
+        /*acc */ u8,
+        /* operand */ u8,
+        /* result */ u8,
+        /* flags */ u8,
+    );
+
+    pub struct State {
+        pub a: u8,
+        pub pc: usize,
+        pub x: u8,
+        pub y: u8,
+        pub status: u8,
+        pub cycles: u32,
+    }
+
     pub struct Processor {
         pub mem: [u8; 0x10000],
         pub a: u8,
@@ -34,6 +50,43 @@ pub mod nescpu {
         pub y: u8,
         pub status: u8,
         pub cycles: u32,
+    }
+
+    pub fn calc_status(status: u8, op: Operation) -> u8 {
+        let (m, n, result, flags) = op;
+        let mut new_status = status;
+        let mut merge_status = |flag: u8, value: bool| {
+            if value {
+                new_status |= flag
+            } else {
+                new_status &= !flag
+            }
+        };
+
+        if flags & C_FLAG != 0 {
+            merge_status(C_FLAG, m as u16 + n as u16 > 0xFF);
+        }
+
+        if flags & Z_FLAG != 0 {
+            merge_status(Z_FLAG, result == 0);
+        }
+
+        if flags & N_FLAG != 0 {
+            merge_status(N_FLAG, result & SIGN_BIT != 0);
+        }
+
+        // Overflow logic is a bit more complicated
+
+        // XOR-ing m & n is going to clear the SIGN_BIT if it's not == in BOTH
+        if flags & V_FLAG != 0 {
+            let operands_match = ((m ^ n) & SIGN_BIT) == 0;
+            let result_operands_match = ((m ^ result) & SIGN_BIT) == 0;
+            let overflow = operands_match && !result_operands_match;
+
+            merge_status(V_FLAG, overflow);
+        }
+
+        new_status
     }
 
     impl Processor {
@@ -61,43 +114,6 @@ pub mod nescpu {
             self.mem[address]
         }
 
-        pub fn set_status(&mut self, m: u8, n: u8, result: u8, flags: u8) {
-            if flags & C_FLAG != 0 {
-                self.set_status_flag(C_FLAG, m as u16 + n as u16 > 0xFF);
-            }
-
-            if flags & Z_FLAG != 0 {
-                self.set_status_flag(Z_FLAG, result == 0);
-            }
-
-            if flags & N_FLAG != 0 {
-                self.set_status_flag(N_FLAG, result & SIGN_BIT != 0);
-            }
-
-            // Overflow logic is a bit more complicated
-
-            // XOR-ing m & n is going to clear the SIGN_BIT if it's not == in BOTH
-            if flags & V_FLAG != 0 {
-                let operands_match = ((m ^ n) & SIGN_BIT) == 0;
-                let result_operands_match = ((m ^ result) & SIGN_BIT) == 0;
-                let overflow = operands_match && !result_operands_match;
-
-                self.set_status_flag(V_FLAG, overflow);
-            }
-        }
-
-        pub fn set_status_flag(&mut self, flag: u8, value: bool) {
-            if value {
-                self.status |= flag
-            } else {
-                self.status &= !flag
-            }
-        }
-
-        pub fn get_status_flag(&self, flag: u8) -> bool {
-            self.status & flag != 0
-        }
-
         pub fn exec(&mut self) {
             let (opcode, mode) = self.decode(self.mem[self.pc]);
             match opcode {
@@ -107,11 +123,14 @@ pub mod nescpu {
                     let result = (self.a + operand + carry) & 0xFF;
 
                     self.cycles += 2;
-                    self.set_status(
-                        self.a,
-                        operand,
-                        result,
-                        N_FLAG | Z_FLAG | C_FLAG | V_FLAG,
+                    self.status = nescpu::calc_status(
+                        self.status,
+                        (
+                            self.a,
+                            operand,
+                            result,
+                            N_FLAG | Z_FLAG | C_FLAG | V_FLAG,
+                        ),
                     );
                     self.a = result;
                 }
@@ -119,7 +138,10 @@ pub mod nescpu {
                     let operand = self.lookup(mode);
                     let result = self.a & operand;
                     self.cycles += 2;
-                    self.set_status(self.a, operand, result, N_FLAG | Z_FLAG);
+                    self.status = nescpu::calc_status(
+                        self.status,
+                        (self.a, operand, result, N_FLAG | Z_FLAG),
+                    );
                     self.a = result;
                 }
                 _ => {}
@@ -187,77 +209,71 @@ mod test {
 
     #[test]
     fn test_status_flags() {
-        let mut cpu = Processor::new();
-
         //  http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
         let overflow_table = [
             (
                 0x50,
                 0x10,
                 0x60,
-                false,
+                0b0000_0000,
                 "#0 No unsigned carry or signed overflow",
             ),
             (
                 0x50,
                 0x50,
                 0xae,
-                true,
+                0b0100_0000,
                 "#1 No unsigned carry but signed overflow",
             ),
             (
                 0x50,
                 0x90,
                 0xe0,
-                false,
+                0b0000_0000,
                 "#2 No unsigned carry or signed overflow",
             ),
             (
                 0x50,
                 0xd0,
                 0x120,
-                false,
+                0b0000_0000,
                 "#3 Unsigned carry, but no signed overflow",
             ),
             (
                 0xd0,
                 0x10,
                 0xe0,
-                false,
+                0b0000_0000,
                 "#4 No unsigned carry or signed overflow",
             ),
             (
                 0xd0,
                 0x50,
                 0x120,
-                false,
+                0b0000_0000,
                 "#5 Unsigned carry but no signed overflow",
             ),
             (
                 0xd0,
                 0x90,
                 0x160,
-                true,
+                0b0100_0000,
                 "#6 Unsigned carry and signed overflow",
             ),
             (
                 0xd0,
                 0xd0,
                 0x1a0,
-                false,
+                0b0000_0000,
                 "#7 Unsigned carry, but no signed overflow",
             ),
         ];
 
         for i in 0..overflow_table.len() {
             let (m, n, result, expected, description) = overflow_table[i];
-            cpu.set_status(m, n, result as u8, V_FLAG);
-            assert_eq!(
-                cpu.get_status_flag(V_FLAG),
-                expected,
-                "{}",
-                description
-            );
+            // cpu.set_status(m, n, result as u8, V_FLAG);
+            let status = nescpu::calc_status(0, (m, n, result as u8, V_FLAG));
+            assert_eq!(status, expected, "{}", description);
         }
     }
 }
