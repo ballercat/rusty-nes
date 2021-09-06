@@ -1,5 +1,6 @@
 // const ZERO_PAGE_TOP: usize = 0x100;
 // const STACK_TOP: usize = 0x200;
+const MEMORY_MAX: usize = 0x10000;
 const RAM_TOP: usize = 0x800;
 const MIRROR_TOP: usize = 0x2000;
 const SIGN_BIT: u8 = 0b1000_0000;
@@ -15,6 +16,29 @@ const C_FLAG: u8 = 0b0000_0001;
 pub mod nescpu {
     use super::*;
 
+    pub struct Memory {
+        ram: [u8; MEMORY_MAX],
+    }
+
+    impl Memory {
+        pub fn new() -> Memory {
+            Memory {
+                ram: [0; MEMORY_MAX],
+            }
+        }
+
+        pub fn write(&mut self, address: usize, value: u8) {
+            self.ram[address] = value;
+        }
+
+        pub fn read(&self, address: usize) -> u8 {
+            if address < MIRROR_TOP {
+                return self.ram[address % RAM_TOP];
+            }
+            self.ram[address]
+        }
+    }
+
     pub enum Opcode {
         ADC,
         AND,
@@ -27,10 +51,10 @@ pub mod nescpu {
     }
 
     pub type Operation = (
-        /*acc */ u8,
-        /* operand */ u8,
-        /* result */ u8,
-        /* flags */ u8,
+        /* acc      */ u8,
+        /* operand  */ u8,
+        /* result   */ u8,
+        /* flags    */ u8,
     );
 
     pub struct State {
@@ -43,11 +67,14 @@ pub mod nescpu {
     }
 
     pub struct Processor {
-        pub mem: [u8; 0x10000],
+        pub mem: Memory,
         pub state: State,
         pub cycles: u32,
     }
 
+    /**
+     * Calculate new Status flag based on the operation
+     */
     pub fn calc_status(status: u8, op: Operation) -> u8 {
         let (m, n, result, flags) = op;
         let mut new_status = status;
@@ -86,7 +113,7 @@ pub mod nescpu {
     }
 
     impl Processor {
-        pub fn new() -> Processor {
+        pub fn new(mem: Option<Memory>) -> Processor {
             let state = State {
                 a: 0,
                 pc: 0,
@@ -96,27 +123,15 @@ pub mod nescpu {
                 cycles: 0,
             };
             Processor {
-                // TODO: DI memory
-                mem: [0; 0x10000],
-                state: state,
+                mem: mem.unwrap_or(Memory::new()),
+                state,
                 cycles: 0,
             }
         }
 
-        pub fn write(&mut self, address: usize, value: u8) {
-            self.mem[address] = value;
-        }
-
-        pub fn read(&self, address: usize) -> u8 {
-            if address < MIRROR_TOP {
-                return self.mem[address % RAM_TOP];
-            }
-            self.mem[address]
-        }
-
         pub fn exec(&mut self) {
             let State { pc, .. } = self.state;
-            let (opcode, mode) = self.decode(self.mem[pc]);
+            let (opcode, mode) = self.decode(self.mem.read(pc));
             match opcode {
                 Opcode::ADC => {
                     let State { a, status, .. } = self.state;
@@ -148,7 +163,7 @@ pub mod nescpu {
 
         pub fn lookup(&mut self, mode: Mode) -> u8 {
             match mode {
-                Mode::Immediate => self.mem[self.state.pc + 1],
+                Mode::Immediate => self.mem.read(self.state.pc + 1),
                 Mode::Implied => {
                     self.state.cycles += 1;
                     0
@@ -186,23 +201,18 @@ pub mod nescpu {
 #[cfg(test)]
 mod test {
     use super::*;
+    use nescpu::Memory;
     use nescpu::Processor;
 
     #[test]
-    fn test_power() {
-        let cpu = Processor::new();
-        assert_eq!(cpu.mem.len(), 0x10000);
-    }
+    fn test_memory() {
+        let mut mem = Memory::new();
+        mem.write(0, 24);
 
-    #[test]
-    fn test_read_write() {
-        let mut cpu = Processor::new();
-        cpu.write(0, 24);
-
-        assert_eq!(cpu.read(0), 24);
-        assert_eq!(cpu.read(0x800), 24);
-        assert_eq!(cpu.read(0x800 * 2), 24);
-        assert_eq!(cpu.read(0x800 * 3), 24);
+        assert_eq!(mem.read(0), 24);
+        assert_eq!(mem.read(0x800), 24);
+        assert_eq!(mem.read(0x800 * 2), 24);
+        assert_eq!(mem.read(0x800 * 3), 24);
     }
 
     #[test]
