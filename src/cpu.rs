@@ -44,11 +44,7 @@ pub mod nescpu {
 
     pub struct Processor {
         pub mem: [u8; 0x10000],
-        pub a: u8,
-        pub pc: usize,
-        pub x: u8,
-        pub y: u8,
-        pub status: u8,
+        pub state: State,
         pub cycles: u32,
     }
 
@@ -91,14 +87,18 @@ pub mod nescpu {
 
     impl Processor {
         pub fn new() -> Processor {
-            Processor {
-                // TODO: DI memory
-                mem: [0; 0x10000],
+            let state = State {
                 a: 0,
                 pc: 0,
                 x: 0,
                 y: 0,
                 status: 0,
+                cycles: 0,
+            };
+            Processor {
+                // TODO: DI memory
+                mem: [0; 0x10000],
+                state: state,
                 cycles: 0,
             }
         }
@@ -115,34 +115,32 @@ pub mod nescpu {
         }
 
         pub fn exec(&mut self) {
-            let (opcode, mode) = self.decode(self.mem[self.pc]);
+            let State { pc, .. } = self.state;
+            let (opcode, mode) = self.decode(self.mem[pc]);
             match opcode {
                 Opcode::ADC => {
+                    let State { a, status, .. } = self.state;
                     let operand = self.lookup(mode);
-                    let carry = self.status & 1;
-                    let result = (self.a + operand + carry) & 0xFF;
+                    let carry = status & 1;
+                    let result = (a + operand + carry) & 0xFF;
 
-                    self.cycles += 2;
-                    self.status = nescpu::calc_status(
-                        self.status,
-                        (
-                            self.a,
-                            operand,
-                            result,
-                            N_FLAG | Z_FLAG | C_FLAG | V_FLAG,
-                        ),
+                    self.state.cycles += 2;
+                    self.state.status = nescpu::calc_status(
+                        status,
+                        (a, operand, result, N_FLAG | Z_FLAG | C_FLAG | V_FLAG),
                     );
-                    self.a = result;
+                    self.state.a = result;
                 }
                 Opcode::AND => {
+                    let State { a, status, .. } = self.state;
                     let operand = self.lookup(mode);
-                    let result = self.a & operand;
-                    self.cycles += 2;
-                    self.status = nescpu::calc_status(
-                        self.status,
-                        (self.a, operand, result, N_FLAG | Z_FLAG),
+                    let result = a & operand;
+                    self.state.cycles += 2;
+                    self.state.status = nescpu::calc_status(
+                        status,
+                        (a, operand, result, N_FLAG | Z_FLAG),
                     );
-                    self.a = result;
+                    self.state.a = result;
                 }
                 _ => {}
             }
@@ -150,9 +148,9 @@ pub mod nescpu {
 
         pub fn lookup(&mut self, mode: Mode) -> u8 {
             match mode {
-                Mode::Immediate => self.mem[self.pc + 1],
+                Mode::Immediate => self.mem[self.state.pc + 1],
                 Mode::Implied => {
-                    self.cycles += 1;
+                    self.state.cycles += 1;
                     0
                 }
             }
