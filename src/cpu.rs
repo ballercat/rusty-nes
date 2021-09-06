@@ -116,7 +116,7 @@ mod test {
     }
 
     #[test]
-    fn test_overflow_flag() {
+    fn test_status_flags() {
         let mut cpu = Processor::new();
 
         //  http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
