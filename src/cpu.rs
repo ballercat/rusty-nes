@@ -15,6 +15,17 @@ const C_FLAG: u8 = 0b0000_0001;
 pub mod nescpu {
     use super::*;
 
+    pub enum Opcode {
+        ADC,
+        AND,
+        NOP,
+    }
+
+    pub enum Mode {
+        Immediate,
+        Implied,
+    }
+
     pub struct Processor {
         pub mem: [u8; 0x10000],
         pub a: u8,
@@ -50,19 +61,29 @@ pub mod nescpu {
             self.mem[address]
         }
 
-        pub fn set_status(&mut self, m: u8, n: u8, result: u8) {
-            self.set_status_flag(C_FLAG, m as u16 + n as u16 > 0xFF);
-            self.set_status_flag(Z_FLAG, result == 0);
-            self.set_status_flag(N_FLAG, result & SIGN_BIT != 0);
+        pub fn set_status(&mut self, m: u8, n: u8, result: u8, flags: u8) {
+            if flags & C_FLAG != 0 {
+                self.set_status_flag(C_FLAG, m as u16 + n as u16 > 0xFF);
+            }
+
+            if flags & Z_FLAG != 0 {
+                self.set_status_flag(Z_FLAG, result == 0);
+            }
+
+            if flags & N_FLAG != 0 {
+                self.set_status_flag(N_FLAG, result & SIGN_BIT != 0);
+            }
 
             // Overflow logic is a bit more complicated
 
             // XOR-ing m & n is going to clear the SIGN_BIT if it's not == in BOTH
-            let operands_match = ((m ^ n) & SIGN_BIT) == 0;
-            let result_operands_match = ((m ^ result) & SIGN_BIT) == 0;
-            let overflow = operands_match && !result_operands_match;
+            if flags & V_FLAG != 0 {
+                let operands_match = ((m ^ n) & SIGN_BIT) == 0;
+                let result_operands_match = ((m ^ result) & SIGN_BIT) == 0;
+                let overflow = operands_match && !result_operands_match;
 
-            self.set_status_flag(V_FLAG, overflow);
+                self.set_status_flag(V_FLAG, overflow);
+            }
         }
 
         pub fn set_status_flag(&mut self, flag: u8, value: bool) {
@@ -78,16 +99,65 @@ pub mod nescpu {
         }
 
         pub fn exec(&mut self) {
-            let opcode = self.mem[self.pc];
+            let (opcode, mode) = self.decode(self.mem[self.pc]);
             match opcode {
-                0x69 => {
-                    let operand = self.mem[self.pc + 1];
+                Opcode::ADC => {
+                    let operand = self.lookup(mode);
                     let carry = self.status & 1;
                     let result = (self.a + operand + carry) & 0xFF;
 
-                    self.set_status(self.a, operand, result);
+                    self.cycles += 2;
+                    self.set_status(
+                        self.a,
+                        operand,
+                        result,
+                        N_FLAG | Z_FLAG | C_FLAG | V_FLAG,
+                    );
+                    self.a = result;
+                }
+                Opcode::AND => {
+                    let operand = self.lookup(mode);
+                    let result = self.a & operand;
+                    self.cycles += 2;
+                    self.set_status(self.a, operand, result, N_FLAG | Z_FLAG);
+                    self.a = result;
                 }
                 _ => {}
+            }
+        }
+
+        pub fn lookup(&mut self, mode: Mode) -> u8 {
+            match mode {
+                Mode::Immediate => self.mem[self.pc + 1],
+                Mode::Implied => {
+                    self.cycles += 1;
+                    0
+                }
+            }
+        }
+
+        pub fn decode(&self, value: u8) -> (Opcode, Mode) {
+            // https://www.masswerk.at/6502/6502_instruction_set.html#layout
+            let a = (value & 0b1110_0000) >> 5;
+            let b = (value & 0b0001_1100) >> 2;
+            let _c = value & 0b0000_0011;
+
+            match a {
+                1 => (
+                    Opcode::AND,
+                    match b {
+                        0..=7 => Mode::Immediate,
+                        _ => Mode::Implied,
+                    },
+                ),
+                3 => (
+                    Opcode::ADC,
+                    match b {
+                        0..=7 => Mode::Immediate,
+                        _ => Mode::Implied,
+                    },
+                ),
+                _ => (Opcode::NOP, Mode::Implied),
             }
         }
     }
@@ -181,7 +251,7 @@ mod test {
 
         for i in 0..overflow_table.len() {
             let (m, n, result, expected, description) = overflow_table[i];
-            cpu.set_status(m, n, result as u8);
+            cpu.set_status(m, n, result as u8, V_FLAG);
             assert_eq!(
                 cpu.get_status_flag(V_FLAG),
                 expected,
