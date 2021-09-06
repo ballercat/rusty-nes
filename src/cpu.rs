@@ -112,6 +112,22 @@ pub mod nescpu {
         new_status
     }
 
+    pub fn adc(state: State, operand: u8) -> State {
+        let carry = state.status & 1;
+        let (result, ..) = state.a.overflowing_add(operand + carry);
+        State {
+            a: result,
+            pc: state.pc + 2,
+            x: state.x,
+            y: state.y,
+            status: nescpu::calc_status(
+                state.status,
+                (state.a, operand, result, N_FLAG | Z_FLAG | C_FLAG | V_FLAG),
+            ),
+            cycles: state.cycles + 2,
+        }
+    }
+
     impl Processor {
         pub fn new(mem: Option<Memory>) -> Processor {
             let state = State {
@@ -202,7 +218,7 @@ pub mod nescpu {
 mod test {
     use super::*;
     use nescpu::Memory;
-    use nescpu::Processor;
+    use nescpu::State;
 
     #[test]
     fn test_memory() {
@@ -219,69 +235,72 @@ mod test {
     fn test_status_flags() {
         //  http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
         let overflow_table = [
-            (
-                0x50,
-                0x10,
-                0x60,
-                0b0000_0000,
-                "#0 No unsigned carry or signed overflow",
-            ),
-            (
-                0x50,
-                0x50,
-                0xae,
-                0b0100_0000,
-                "#1 No unsigned carry but signed overflow",
-            ),
-            (
-                0x50,
-                0x90,
-                0xe0,
-                0b0000_0000,
-                "#2 No unsigned carry or signed overflow",
-            ),
-            (
-                0x50,
-                0xd0,
-                0x120,
-                0b0000_0000,
-                "#3 Unsigned carry, but no signed overflow",
-            ),
-            (
-                0xd0,
-                0x10,
-                0xe0,
-                0b0000_0000,
-                "#4 No unsigned carry or signed overflow",
-            ),
-            (
-                0xd0,
-                0x50,
-                0x120,
-                0b0000_0000,
-                "#5 Unsigned carry but no signed overflow",
-            ),
-            (
-                0xd0,
-                0x90,
-                0x160,
-                0b0100_0000,
-                "#6 Unsigned carry and signed overflow",
-            ),
-            (
-                0xd0,
-                0xd0,
-                0x1a0,
-                0b0000_0000,
-                "#7 Unsigned carry, but no signed overflow",
-            ),
+            // "#0 No unsigned carry or signed overflow",
+            (0x50, 0x10, 0x60, 0b0000_0000),
+            // "#1 No unsigned carry but signed overflow",
+            (0x50, 0x50, 0xae, 0b0100_0000),
+            // "#2 No unsigned carry or signed overflow",
+            (0x50, 0x90, 0xe0, 0b0000_0000),
+            // "#3 Unsigned carry, but no signed overflow",
+            (0x50, 0xd0, 0x120, 0b0000_0000),
+            // "#4 No unsigned carry or signed overflow",
+            (0xd0, 0x10, 0xe0, 0b0000_0000),
+            // "#5 Unsigned carry but no signed overflow",
+            (0xd0, 0x50, 0x120, 0b0000_0000),
+            // "#6 Unsigned carry and signed overflow",
+            (0xd0, 0x90, 0x160, 0b0100_0000),
+            // "#7 Unsigned carry, but no signed overflow",
+            (0xd0, 0xd0, 0x1a0, 0b0000_0000),
         ];
 
         for i in 0..overflow_table.len() {
-            let (m, n, result, expected, description) = overflow_table[i];
+            let (m, n, result, expected) = overflow_table[i];
             // cpu.set_status(m, n, result as u8, V_FLAG);
             let status = nescpu::calc_status(0, (m, n, result as u8, V_FLAG));
-            assert_eq!(status, expected, "{}", description);
+            assert_eq!(
+                status, expected,
+                "VFLAG m: {} n: {} result: {}",
+                m, n, result
+            );
         }
+    }
+
+    #[test]
+    fn test_adc() {
+        let base = State {
+            pc: 0,
+            a: 0,
+            x: 0,
+            y: 0,
+            status: 0,
+            cycles: 0,
+        };
+        let state = nescpu::adc(
+            State {
+                a: 1,
+                status: 0 | C_FLAG,
+                ..base
+            },
+            1,
+        );
+
+        // a + operand + carry_flag
+        assert_eq!(state.a, 3);
+        assert_eq!(state.pc, 2);
+        assert_eq!(state.cycles, 2);
+
+        let state = nescpu::adc(State { a: 1, ..base }, 0xFF);
+
+        assert_eq!(state.a, 0);
+        assert_eq!(state.status, Z_FLAG | C_FLAG);
+
+        let state = nescpu::adc(State { a: 0xFF, ..base }, 0xFF);
+        assert_eq!(state.a, 0xFE);
+        assert_eq!(state.status, N_FLAG | C_FLAG);
+
+        let state = nescpu::adc(State { a: 0x50, ..base }, 0x50);
+
+        assert_eq!(state.a, 0xa0);
+        assert_eq!(state.status, N_FLAG | V_FLAG);
     }
 }
