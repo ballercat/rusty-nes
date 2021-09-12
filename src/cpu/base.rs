@@ -32,6 +32,20 @@ pub struct Processor {
 }
 
 impl Processor {
+    pub fn new(mem: Option<Memory>) -> Processor {
+        let state = State {
+            a: 0,
+            pc: 0,
+            x: 0,
+            y: 0,
+            status: 0,
+        };
+        Processor {
+            mem: mem.unwrap_or(Memory::new()),
+            state,
+            cycles: 0,
+        }
+    }
     pub fn get_pc(&self) -> usize {
         self.state.pc
     }

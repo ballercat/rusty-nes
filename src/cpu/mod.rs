@@ -5,7 +5,7 @@ mod opcodes;
 
 use addressing::Mode;
 use base::{Processor, State};
-use memory::{Memory, RESET_VECTOR};
+use memory::RESET_VECTOR;
 
 pub mod nescpu {
     use super::*;
@@ -13,21 +13,6 @@ pub mod nescpu {
     pub type Opcode = fn(&mut Processor, Mode) -> ();
 
     impl Processor {
-        pub fn new(mem: Option<Memory>) -> Processor {
-            let state = State {
-                a: 0,
-                pc: 0,
-                x: 0,
-                y: 0,
-                status: 0,
-            };
-            Processor {
-                mem: mem.unwrap_or(Memory::new()),
-                state,
-                cycles: 0,
-            }
-        }
-
         pub fn reset(&mut self) {
             let lower = self.mem.read(RESET_VECTOR) as usize;
             let upper = self.mem.read(RESET_VECTOR + 1) as usize;
@@ -61,7 +46,7 @@ pub mod nescpu {
 #[cfg(test)]
 mod test {
     use super::base::V_FLAG;
-    use super::memory::ROM_START;
+    use super::memory::{Memory, ROM_START};
     use super::*;
 
     #[test]
