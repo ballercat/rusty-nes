@@ -1,6 +1,14 @@
-const MEMORY_MAX: usize = 0x10000;
-const RAM_TOP: usize = 0x800;
-const MIRROR_TOP: usize = 0x2000;
+pub const MEMORY_MAX: usize = 0x10000;
+pub const RAM_TOP: usize = 0x800;
+pub const MIRROR_TOP: usize = 0x2000;
+#[allow(dead_code)]
+pub const ZERO_PAGE_TOP: usize = 0x100;
+#[allow(dead_code)]
+pub const STACK_TOP: usize = 0x200;
+#[allow(dead_code)]
+pub const RESET_VECTOR: usize = 0xFFFC;
+#[allow(dead_code)]
+pub const ROM_START: usize = 0x8000;
 
 pub struct Memory {
     ram: [u8; MEMORY_MAX],

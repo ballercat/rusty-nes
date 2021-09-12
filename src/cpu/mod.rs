@@ -1,35 +1,12 @@
-// const ZERO_PAGE_TOP: usize = 0x100;
-// const STACK_TOP: usize = 0x200;
-const RESET_VECTOR: usize = 0xFFFC;
-const SIGN_BIT: u8 = 0b1000_0000;
-
-const N_FLAG: u8 = 0b1000_0000;
-const V_FLAG: u8 = 0b0100_0000;
-// const B_FLAG: u8 = 0b0001_0000;
-// const D_FLAG: u8 = 0b0000_1000;
-// const I_FLAG: u8 = 0b0000_0100;
-const Z_FLAG: u8 = 0b0000_0010;
-const C_FLAG: u8 = 0b0000_0001;
-
 mod base;
 mod memory;
-use base::{Processor, State};
-use memory::Memory;
+mod opcodes;
+
+use base::{Mode, Processor, State};
+use memory::{Memory, RESET_VECTOR};
 
 pub mod nescpu {
     use super::*;
-
-    pub enum Mode {
-        Immediate,
-        Implied,
-    }
-
-    pub enum Reg {
-        A,
-        X,
-        Y,
-        S,
-    }
 
     pub type Operation = (
         /* acc      */ u8,
@@ -96,163 +73,14 @@ pub mod nescpu {
                 _ => (Processor::nop, Mode::Implied),
             }
         }
-
-        pub fn get_pc(&self) -> usize {
-            self.state.pc
-        }
-
-        pub fn update_pc(&mut self, delta: i32) -> &mut Self {
-            println!("Update pc {} with {}", self.state.pc, delta);
-            if delta.is_negative() {
-                self.state.pc -= delta.wrapping_abs() as u32 as usize;
-            } else {
-                self.state.pc += delta as usize;
-            }
-            self
-        }
-
-        pub fn get_reg(&self, reg: Reg) -> u8 {
-            match reg {
-                Reg::X => self.state.x,
-                Reg::Y => self.state.y,
-                Reg::A => self.state.a,
-                Reg::S => self.state.status,
-            }
-        }
-
-        pub fn set_reg(&mut self, reg: Reg, value: u8) -> &mut Self {
-            match reg {
-                Reg::X => self.state.x = value,
-                Reg::Y => self.state.y = value,
-                Reg::A => self.state.a = value,
-                Reg::S => self.state.status = value,
-            };
-            self
-        }
-
-        pub fn update_cycles(&mut self, cycles: u32) -> &mut Self {
-            self.cycles += cycles;
-            self
-        }
-
-        /**
-         * Calculate new Status flag based on the operation
-         */
-        pub fn update_status(
-            &mut self,
-            m: u8,
-            n: u8,
-            result: u8,
-            flags: u8,
-        ) -> &mut Self {
-            let mut new_status = self.get_reg(Reg::S);
-            let mut merge_status = |flag: u8, value: bool| {
-                if value {
-                    new_status |= flag
-                } else {
-                    new_status &= !flag
-                }
-            };
-
-            if flags & C_FLAG != 0 {
-                merge_status(C_FLAG, m as u16 + n as u16 > 0xFF);
-            }
-
-            if flags & Z_FLAG != 0 {
-                merge_status(Z_FLAG, result == 0);
-            }
-
-            if flags & N_FLAG != 0 {
-                merge_status(N_FLAG, result & SIGN_BIT != 0);
-            }
-
-            // Overflow logic is a bit more complicated
-
-            // XOR-ing m & n is going to clear the SIGN_BIT if it's not == in BOTH
-            if flags & V_FLAG != 0 {
-                let operands_match = ((m ^ n) & SIGN_BIT) == 0;
-                let result_operands_match = ((m ^ result) & SIGN_BIT) == 0;
-                let overflow = operands_match && !result_operands_match;
-
-                merge_status(V_FLAG, overflow);
-            }
-
-            self.set_reg(Reg::S, new_status);
-
-            self
-        }
-
-        pub fn adc(&mut self, mode: Mode) {
-            let operand = self.lookup(mode);
-            let accumulator = self.state.a;
-            let carry = self.state.status & 1;
-            println!(
-                "operand {} accumulator {} carry {}",
-                operand, accumulator, carry
-            );
-            let (mut result, ..) = accumulator.overflowing_add(operand);
-            result += carry;
-            self.set_reg(Reg::A, result)
-                .update_pc(2)
-                .update_status(
-                    accumulator,
-                    operand,
-                    result,
-                    N_FLAG | Z_FLAG | C_FLAG | V_FLAG,
-                )
-                .update_cycles(2);
-        }
-
-        pub fn and(&mut self, mode: Mode) {
-            let operand = self.lookup(mode);
-            let accumulator = self.get_reg(Reg::A);
-            let result = accumulator & operand;
-            self.set_reg(Reg::A, result)
-                .update_pc(2)
-                .update_status(accumulator, operand, result, N_FLAG | Z_FLAG)
-                .update_cycles(2);
-        }
-        pub fn asl(&mut self, mode: Mode) {
-            let operand = self.lookup(mode);
-            let result = operand << 1;
-            let accumulator = self.get_reg(Reg::A);
-            self.set_reg(Reg::A, result)
-                .update_status(
-                    accumulator,
-                    operand,
-                    result,
-                    Z_FLAG | C_FLAG | N_FLAG,
-                )
-                .update_cycles(2);
-        }
-
-        pub fn lda(&mut self, mode: Mode) {
-            let operand = self.lookup(mode);
-            println!("Load accumulator with {}", operand);
-            self.set_reg(Reg::A, operand)
-                .update_pc(2)
-                .update_status(operand, operand, operand, Z_FLAG | N_FLAG)
-                .update_cycles(2);
-        }
-
-        pub fn sec(&mut self, _mode: Mode) {
-            println!("Set carry flag");
-            self.state.status |= C_FLAG;
-            self.update_pc(1).update_cycles(2);
-        }
-
-        pub fn nop(&mut self, _mode: Mode) {
-            println!("NOP");
-            self.update_pc(1).update_cycles(1);
-        }
     }
 }
 
 #[cfg(test)]
 mod test {
+    use super::base::V_FLAG;
+    use super::memory::ROM_START;
     use super::*;
-
-    const ROM_START: usize = 0x8000;
 
     #[test]
     fn test_memory() {
