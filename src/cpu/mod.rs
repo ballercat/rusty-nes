@@ -8,13 +8,6 @@ use memory::{Memory, RESET_VECTOR};
 pub mod nescpu {
     use super::*;
 
-    pub type Operation = (
-        /* acc      */ u8,
-        /* operand  */ u8,
-        /* result   */ u8,
-        /* flags    */ u8,
-    );
-
     pub type Opcode = fn(&mut Processor, Mode) -> ();
 
     impl Processor {
