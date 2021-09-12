@@ -1,13 +1,33 @@
 use super::addressing::Mode;
 use super::base::{Processor, Reg, C_FLAG, N_FLAG, V_FLAG, Z_FLAG};
 
+#[allow(dead_code)]
+pub const ADC: u8 = 0x69;
+#[allow(dead_code)]
 pub const BCC: u8 = 0x90;
+#[allow(dead_code)]
 pub const BCS: u8 = 0xb0;
+#[allow(dead_code)]
+pub const BEQ: u8 = 0xf0;
+#[allow(dead_code)]
 pub const CLC: u8 = 0x18;
+#[allow(dead_code)]
 pub const SEC: u8 = 0x38;
+#[allow(dead_code)]
 pub const NOP: u8 = 0xea;
+#[allow(dead_code)]
+pub const LDA: u8 = 0xa9;
 
 pub type Opcode = fn(&mut Processor, Mode) -> ();
+
+pub fn opcode_len(mode: Mode) -> i32 {
+    match mode {
+        Mode::Absolute => 3,
+        Mode::ZeroPage | Mode::Immediate => 2,
+        _ => 1,
+    }
+}
+
 impl Processor {
     pub fn decode(&self, value: u8) -> (Opcode, Mode) {
         // https://www.masswerk.at/6502/6502_instruction_set.html#layout
@@ -18,6 +38,7 @@ impl Processor {
         match (c, b, a) {
             (0, 4, 4) => (Processor::bcc, Mode::Immediate),
             (0, 4, 5) => (Processor::bcs, Mode::Immediate),
+            (0, 4, 7) => (Processor::beq, Mode::Immediate),
             (0, 6, 0) => (Processor::clc, Mode::Implied),
             (0, 6, 1) => (Processor::sec, Mode::Implied),
             (1, 2, 1) => (Processor::and, Mode::Immediate),
@@ -40,7 +61,7 @@ impl Processor {
         let (mut result, ..) = accumulator.overflowing_add(operand);
         result += carry;
         self.set_reg(Reg::A, result)
-            .update_pc(2)
+            .update_pc(opcode_len(mode))
             .update_status(
                 accumulator,
                 operand,
@@ -55,7 +76,7 @@ impl Processor {
         let accumulator = self.get_reg(Reg::A);
         let result = accumulator & operand;
         self.set_reg(Reg::A, result)
-            .update_pc(2)
+            .update_pc(opcode_len(mode))
             .update_status(accumulator, operand, result, N_FLAG | Z_FLAG)
             .update_cycles(2);
     }
@@ -66,12 +87,13 @@ impl Processor {
 
         match mode {
             Mode::Accumulator => {
-                self.set_reg(Reg::A, result).update_pc(1);
+                self.set_reg(Reg::A, result);
             }
             _ => panic!("Unimplemented ASL addressing mode!"),
         };
 
         self.update_status(operand, 1, result, Z_FLAG | C_FLAG | N_FLAG)
+            .update_pc(opcode_len(mode))
             .update_cycles(2);
     }
 
@@ -82,7 +104,7 @@ impl Processor {
             cycles += 1;
             self.update_pc(operand as i8 as i32);
         } else {
-            self.update_pc(2);
+            self.update_pc(opcode_len(mode));
         }
 
         self.update_cycles(cycles);
@@ -95,33 +117,58 @@ impl Processor {
             cycles += 1;
             self.update_pc(operand as i8 as i32);
         } else {
-            self.update_pc(2);
+            self.update_pc(opcode_len(mode));
         }
         self.update_cycles(cycles);
     }
 
-    pub fn clc(&mut self, _mode: Mode) {
+    pub fn beq(&mut self, mode: Mode) {
+        let operand = self.lookup(mode);
+        let mut cycles = 2;
+        if self.state.status & Z_FLAG != 0 {
+            cycles += 1;
+            self.update_pc(operand as i8 as i32);
+        } else {
+            self.update_pc(opcode_len(mode));
+        }
+        self.update_cycles(cycles);
+    }
+
+    pub fn bit(&mut self, mode: Mode) {
+        let operand = self.lookup(mode);
+        let accumulator = self.state.a;
+        let result = operand & accumulator;
+
+        let new_flags = operand & (N_FLAG | V_FLAG);
+        self.state.status =
+            (self.state.status & !(N_FLAG | V_FLAG)) | new_flags;
+
+        self.update_status(accumulator, operand, result, Z_FLAG)
+            .update_pc(opcode_len(mode));
+    }
+
+    pub fn clc(&mut self, mode: Mode) {
         self.state.status &= !C_FLAG;
-        self.update_pc(1).update_cycles(2);
+        self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 
     pub fn lda(&mut self, mode: Mode) {
         let operand = self.lookup(mode);
 
         self.set_reg(Reg::A, operand)
-            .update_pc(2)
+            .update_pc(opcode_len(mode))
             .update_status(operand, operand, operand, Z_FLAG | N_FLAG)
             .update_cycles(2);
     }
 
-    pub fn sec(&mut self, _mode: Mode) {
+    pub fn sec(&mut self, mode: Mode) {
         self.state.status |= C_FLAG;
-        self.update_pc(1).update_cycles(2);
+        self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 
     // 0xea
-    pub fn nop(&mut self, _mode: Mode) {
+    pub fn nop(&mut self, mode: Mode) {
         println!("NOP");
-        self.update_pc(1).update_cycles(1);
+        self.update_pc(opcode_len(mode)).update_cycles(1);
     }
 }

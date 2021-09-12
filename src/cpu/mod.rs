@@ -24,7 +24,7 @@ impl Processor {
 #[cfg(test)]
 mod test {
     use super::memory::ROM_START;
-    use super::opcodes::{BCC, BCS, CLC, NOP, SEC};
+    use super::opcodes::{BCC, BCS, BEQ, CLC, LDA, NOP, SEC};
     use super::*;
 
     fn run_cpu(cpu: &mut Processor, program: Vec<u8>) {
@@ -64,7 +64,7 @@ mod test {
         // LDA# 01 ; load accumulator
         // SEC     ; set carry flag
         // ADC# 01 ; add with carry
-        run_cpu(&mut cpu, vec![0xa9, 0x01, 0x38, 0x69, 0x01]);
+        run_cpu(&mut cpu, vec![LDA, 0x01, 0x38, 0x69, 0x01]);
 
         // a + operand + carry_flag
         assert_eq!(cpu.state.a, 3, "ADC result should be {}", 3);
@@ -75,7 +75,7 @@ mod test {
         let mut cpu = Processor::new(None);
         // LDA# 03
         // AND# 02
-        run_cpu(&mut cpu, vec![0xa9, 0b11, 0x29, 0b10]);
+        run_cpu(&mut cpu, vec![LDA, 0b11, 0x29, 0b10]);
         assert_eq!(cpu.state.a, 0b10, "AND result should be {}", 0b10);
     }
 
@@ -93,6 +93,12 @@ mod test {
         let mut cpu = Processor::new(None);
         // Jump over NOP because of carry, jump back to start because of carry clear
         run_cpu(&mut cpu, vec![SEC, BCS, 0x03, NOP, CLC, BCC, 0xfb]);
-        assert_eq!(cpu.state.pc, ROM_START, "Reverse branch with BCC");
+        assert_eq!(
+            cpu.state.pc, ROM_START,
+            "Branch BCS and reverse branch with BCC"
+        );
+
+        run_cpu(&mut cpu, vec![LDA, 0, BEQ, 0xfe]);
+        assert_eq!(cpu.state.pc, ROM_START, "Branch via BEQ");
     }
 }
