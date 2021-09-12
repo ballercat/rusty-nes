@@ -23,8 +23,12 @@ impl Processor {
 
 #[cfg(test)]
 mod test {
+    use super::base::N_FLAG;
     use super::memory::ROM_START;
-    use super::opcodes::{BCC, BCS, BEQ, CLC, LDA, NOP, SEC};
+    use super::opcodes::{
+        BCC, BCS, BEQ, BIT_A, BIT_Z, BMI, CLC, LDA, NOP, SEC,
+    };
+
     use super::*;
 
     fn run_cpu(cpu: &mut Processor, program: Vec<u8>) {
@@ -100,5 +104,13 @@ mod test {
 
         run_cpu(&mut cpu, vec![LDA, 0, BEQ, 0xfe]);
         assert_eq!(cpu.state.pc, ROM_START, "Branch via BEQ");
+
+        cpu.mem.write(0xFF, N_FLAG);
+        // Testing BIT as well as BMI below
+        run_cpu(&mut cpu, vec![BIT_Z, 0xFF, BMI, 0xfe]);
+        assert_eq!(cpu.state.pc, ROM_START, "Branch via BMI");
+
+        run_cpu(&mut cpu, vec![BIT_A, 0xFF, 0x00, BMI, 0xfd]);
+        assert_eq!(cpu.state.pc, ROM_START, "Branch via BMI");
     }
 }

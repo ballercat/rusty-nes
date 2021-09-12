@@ -10,6 +10,12 @@ pub const BCS: u8 = 0xb0;
 #[allow(dead_code)]
 pub const BEQ: u8 = 0xf0;
 #[allow(dead_code)]
+pub const BIT_Z: u8 = 0x24;
+#[allow(dead_code)]
+pub const BIT_A: u8 = 0x2c;
+#[allow(dead_code)]
+pub const BMI: u8 = 0x30;
+#[allow(dead_code)]
 pub const CLC: u8 = 0x18;
 #[allow(dead_code)]
 pub const SEC: u8 = 0x38;
@@ -36,6 +42,9 @@ impl Processor {
         let c = value & 0b0000_0011;
 
         match (c, b, a) {
+            (0, 1, 1) => (Processor::bit, Mode::ZeroPage),
+            (0, 3, 1) => (Processor::bit, Mode::Absolute),
+            (0, 4, 1) => (Processor::bmi, Mode::Immediate),
             (0, 4, 4) => (Processor::bcc, Mode::Immediate),
             (0, 4, 5) => (Processor::bcs, Mode::Immediate),
             (0, 4, 7) => (Processor::beq, Mode::Immediate),
@@ -147,6 +156,18 @@ impl Processor {
             .update_pc(opcode_len(mode));
     }
 
+    pub fn bmi(&mut self, mode: Mode) {
+        let operand = self.lookup(mode);
+        let mut cycles = 2;
+        if self.state.status & N_FLAG != 0 {
+            cycles += 1;
+            self.update_pc(operand as i8 as i32);
+        } else {
+            self.update_pc(opcode_len(mode));
+        }
+        self.update_cycles(cycles);
+    }
+
     pub fn clc(&mut self, mode: Mode) {
         self.state.status &= !C_FLAG;
         self.update_pc(opcode_len(mode)).update_cycles(2);
@@ -166,7 +187,6 @@ impl Processor {
         self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 
-    // 0xea
     pub fn nop(&mut self, mode: Mode) {
         println!("NOP");
         self.update_pc(opcode_len(mode)).update_cycles(1);
