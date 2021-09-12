@@ -1,8 +1,10 @@
+mod addressing;
 mod base;
 mod memory;
 mod opcodes;
 
-use base::{Mode, Processor, State};
+use addressing::Mode;
+use base::{Processor, State};
 use memory::{Memory, RESET_VECTOR};
 
 pub mod nescpu {
@@ -37,19 +39,6 @@ pub mod nescpu {
             let (opcode, mode) = self.decode(self.mem.read(pc));
             println!("Decode pc {}", pc);
             opcode(self, mode);
-        }
-
-        pub fn lookup(&mut self, mode: Mode) -> u8 {
-            match mode {
-                Mode::Immediate => {
-                    println!("Lookup Immediate value at {}", self.state.pc + 1);
-                    self.mem.read(self.state.pc + 1)
-                }
-                Mode::Implied => {
-                    self.cycles += 1;
-                    0
-                }
-            }
         }
 
         pub fn decode(&self, value: u8) -> (Opcode, Mode) {

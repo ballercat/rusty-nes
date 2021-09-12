@@ -1,4 +1,5 @@
-use super::base::{Mode, Processor, Reg, C_FLAG, N_FLAG, V_FLAG, Z_FLAG};
+use super::addressing::Mode;
+use super::base::{Processor, Reg, C_FLAG, N_FLAG, V_FLAG, Z_FLAG};
 
 impl Processor {
     pub fn adc(&mut self, mode: Mode) {

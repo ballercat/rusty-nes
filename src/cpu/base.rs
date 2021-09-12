@@ -9,11 +9,6 @@ pub const Z_FLAG: u8 = 0b0000_0010;
 pub const C_FLAG: u8 = 0b0000_0001;
 pub const SIGN_BIT: u8 = 0b1000_0000;
 
-pub enum Mode {
-    Immediate,
-    Implied,
-}
-
 pub enum Reg {
     A,
     X,
