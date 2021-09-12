@@ -1,10 +1,6 @@
 // const ZERO_PAGE_TOP: usize = 0x100;
 // const STACK_TOP: usize = 0x200;
-const MEMORY_MAX: usize = 0x10000;
-const RAM_TOP: usize = 0x800;
-const ROM_START: usize = 0x8000;
 const RESET_VECTOR: usize = 0xFFFC;
-const MIRROR_TOP: usize = 0x2000;
 const SIGN_BIT: u8 = 0b1000_0000;
 
 const N_FLAG: u8 = 0b1000_0000;
@@ -15,35 +11,11 @@ const V_FLAG: u8 = 0b0100_0000;
 const Z_FLAG: u8 = 0b0000_0010;
 const C_FLAG: u8 = 0b0000_0001;
 
+mod memory;
+use memory::Memory;
+
 pub mod nescpu {
     use super::*;
-
-    pub struct Memory {
-        ram: [u8; MEMORY_MAX],
-    }
-
-    impl Memory {
-        pub fn new() -> Memory {
-            Memory {
-                ram: [0; MEMORY_MAX],
-            }
-        }
-
-        pub fn write(&mut self, address: usize, value: u8) {
-            self.ram[address] = value;
-        }
-
-        pub fn read(&self, address: usize) -> u8 {
-            if address < MIRROR_TOP {
-                return self.ram[address % RAM_TOP];
-            }
-            self.ram[address]
-        }
-
-        pub fn load(&mut self, address: usize, data: &[u8]) {
-            self.ram[address..address + data.len()].copy_from_slice(data);
-        }
-    }
 
     pub enum Mode {
         Immediate,
@@ -292,8 +264,9 @@ pub mod nescpu {
 #[cfg(test)]
 mod test {
     use super::*;
-    use nescpu::Memory;
     use nescpu::Processor;
+
+    const ROM_START: usize = 0x8000;
 
     #[test]
     fn test_memory() {
