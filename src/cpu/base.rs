@@ -131,3 +131,43 @@ impl Processor {
         self
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_status_flags() {
+        //  http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
+        let overflow_table = [
+            // "#0 No unsigned carry or signed overflow",
+            (0x50, 0x10, 0x60, 0b0000_0000),
+            // "#1 No unsigned carry but signed overflow",
+            (0x50, 0x50, 0xae, 0b0100_0000),
+            // "#2 No unsigned carry or signed overflow",
+            (0x50, 0x90, 0xe0, 0b0000_0000),
+            // "#3 Unsigned carry, but no signed overflow",
+            (0x50, 0xd0, 0x120, 0b0000_0000),
+            // "#4 No unsigned carry or signed overflow",
+            (0xd0, 0x10, 0xe0, 0b0000_0000),
+            // "#5 Unsigned carry but no signed overflow",
+            (0xd0, 0x50, 0x120, 0b0000_0000),
+            // "#6 Unsigned carry and signed overflow",
+            (0xd0, 0x90, 0x160, 0b0100_0000),
+            // "#7 Unsigned carry, but no signed overflow",
+            (0xd0, 0xd0, 0x1a0, 0b0000_0000),
+        ];
+
+        let mut cpu = Processor::new(None);
+
+        for i in 0..overflow_table.len() {
+            let (m, n, result, expected) = overflow_table[i];
+            cpu.update_status(m, n, result as u8, V_FLAG);
+            assert_eq!(
+                cpu.state.status, expected,
+                "VFLAG m: {} n: {} result: {}",
+                m, n, result
+            );
+        }
+    }
+}

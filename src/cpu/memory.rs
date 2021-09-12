@@ -36,3 +36,19 @@ impl Memory {
         self.ram[address..address + data.len()].copy_from_slice(data);
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_memory() {
+        let mut mem = Memory::new();
+        mem.write(0, 24);
+
+        assert_eq!(mem.read(0), 24);
+        assert_eq!(mem.read(0x800), 24);
+        assert_eq!(mem.read(0x800 * 2), 24);
+        assert_eq!(mem.read(0x800 * 3), 24);
+    }
+}
