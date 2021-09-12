@@ -2,6 +2,8 @@
 // const STACK_TOP: usize = 0x200;
 const MEMORY_MAX: usize = 0x10000;
 const RAM_TOP: usize = 0x800;
+const ROM_START: usize = 0x8000;
+const RESET_VECTOR: usize = 0xFFFC;
 const MIRROR_TOP: usize = 0x2000;
 const SIGN_BIT: u8 = 0b1000_0000;
 
@@ -37,11 +39,22 @@ pub mod nescpu {
             }
             self.ram[address]
         }
+
+        pub fn load(&mut self, address: usize, data: &[u8]) {
+            self.ram[address..address + data.len()].copy_from_slice(data);
+        }
     }
 
     pub enum Mode {
         Immediate,
         Implied,
+    }
+
+    pub enum Reg {
+        A,
+        X,
+        Y,
+        S,
     }
 
     pub type Operation = (
@@ -51,7 +64,7 @@ pub mod nescpu {
         /* flags    */ u8,
     );
 
-    pub type Opcode = fn(State, u8) -> State;
+    pub type Opcode = fn(&mut Processor, Mode) -> ();
 
     #[derive(Copy, Clone)]
     pub struct State {
@@ -60,91 +73,12 @@ pub mod nescpu {
         pub x: u8,
         pub y: u8,
         pub status: u8,
-        pub cycles: u32,
     }
 
     pub struct Processor {
         pub mem: Memory,
         pub state: State,
         pub cycles: u32,
-    }
-
-    /**
-     * Calculate new Status flag based on the operation
-     */
-    pub fn calc_status(status: u8, op: Operation) -> u8 {
-        let (m, n, result, flags) = op;
-        let mut new_status = status;
-        let mut merge_status = |flag: u8, value: bool| {
-            if value {
-                new_status |= flag
-            } else {
-                new_status &= !flag
-            }
-        };
-
-        if flags & C_FLAG != 0 {
-            merge_status(C_FLAG, m as u16 + n as u16 > 0xFF);
-        }
-
-        if flags & Z_FLAG != 0 {
-            merge_status(Z_FLAG, result == 0);
-        }
-
-        if flags & N_FLAG != 0 {
-            merge_status(N_FLAG, result & SIGN_BIT != 0);
-        }
-
-        // Overflow logic is a bit more complicated
-
-        // XOR-ing m & n is going to clear the SIGN_BIT if it's not == in BOTH
-        if flags & V_FLAG != 0 {
-            let operands_match = ((m ^ n) & SIGN_BIT) == 0;
-            let result_operands_match = ((m ^ result) & SIGN_BIT) == 0;
-            let overflow = operands_match && !result_operands_match;
-
-            merge_status(V_FLAG, overflow);
-        }
-
-        new_status
-    }
-
-    pub fn adc(state: State, operand: u8) -> State {
-        let carry = state.status & 1;
-        let (mut result, ..) = state.a.overflowing_add(operand);
-        result += carry;
-        State {
-            a: result,
-            pc: state.pc + 2,
-            status: nescpu::calc_status(
-                state.status,
-                (state.a, operand, result, N_FLAG | Z_FLAG | C_FLAG | V_FLAG),
-            ),
-            cycles: state.cycles + 2,
-            ..state
-        }
-    }
-
-    pub fn and(state: State, operand: u8) -> State {
-        let result = state.a & operand;
-        State {
-            a: result,
-            pc: state.pc + 2,
-            status: nescpu::calc_status(
-                state.status,
-                (state.a, operand, result, N_FLAG | Z_FLAG),
-            ),
-            cycles: state.cycles + 2,
-            ..state
-        }
-    }
-
-    pub fn nop(state: State, _operand: u8) -> State {
-        State {
-            pc: state.pc + 1,
-            cycles: state.cycles + 1,
-            ..state
-        }
     }
 
     impl Processor {
@@ -155,7 +89,6 @@ pub mod nescpu {
                 x: 0,
                 y: 0,
                 status: 0,
-                cycles: 0,
             };
             Processor {
                 mem: mem.unwrap_or(Memory::new()),
@@ -164,19 +97,27 @@ pub mod nescpu {
             }
         }
 
+        pub fn reset(&mut self) {
+            let lower = self.mem.read(RESET_VECTOR) as usize;
+            let upper = self.mem.read(RESET_VECTOR + 1) as usize;
+            self.state.pc = lower | (upper << 8);
+        }
+
         pub fn exec(&mut self) {
             let State { pc, .. } = self.state;
             let (opcode, mode) = self.decode(self.mem.read(pc));
-            let operand = self.lookup(mode);
-
-            self.state = opcode(self.state, operand);
+            println!("Decode pc {}", pc);
+            opcode(self, mode);
         }
 
         pub fn lookup(&mut self, mode: Mode) -> u8 {
             match mode {
-                Mode::Immediate => self.mem.read(self.state.pc + 1),
+                Mode::Immediate => {
+                    println!("Lookup Immediate value at {}", self.state.pc + 1);
+                    self.mem.read(self.state.pc + 1)
+                }
                 Mode::Implied => {
-                    self.state.cycles += 1;
+                    self.cycles += 1;
                     0
                 }
             }
@@ -186,25 +127,164 @@ pub mod nescpu {
             // https://www.masswerk.at/6502/6502_instruction_set.html#layout
             let a = (value & 0b1110_0000) >> 5;
             let b = (value & 0b0001_1100) >> 2;
-            let _c = value & 0b0000_0011;
+            let c = value & 0b0000_0011;
 
-            match a {
-                1 => (
-                    nescpu::and,
-                    match b {
-                        0..=7 => Mode::Immediate,
-                        _ => Mode::Implied,
-                    },
-                ),
-                3 => (
-                    nescpu::adc,
-                    match b {
-                        0..=7 => Mode::Immediate,
-                        _ => Mode::Implied,
-                    },
-                ),
-                _ => (nescpu::nop, Mode::Implied),
+            match (c, b, a) {
+                (0, 6, 1) => (Processor::sec, Mode::Implied),
+                (1, 2, 1) => (Processor::and, Mode::Immediate),
+                (1, 2, 3) => (Processor::adc, Mode::Immediate),
+                (1, 2, 5) => (Processor::lda, Mode::Immediate),
+                _ => (Processor::nop, Mode::Implied),
             }
+        }
+
+        pub fn get_pc(&self) -> usize {
+            self.state.pc
+        }
+
+        pub fn update_pc(&mut self, delta: i32) -> &mut Self {
+            println!("Update pc {} with {}", self.state.pc, delta);
+            if delta.is_negative() {
+                self.state.pc -= delta.wrapping_abs() as u32 as usize;
+            } else {
+                self.state.pc += delta as usize;
+            }
+            self
+        }
+
+        pub fn get_reg(&self, reg: Reg) -> u8 {
+            match reg {
+                Reg::X => self.state.x,
+                Reg::Y => self.state.y,
+                Reg::A => self.state.a,
+                Reg::S => self.state.status,
+            }
+        }
+
+        pub fn set_reg(&mut self, reg: Reg, value: u8) -> &mut Self {
+            match reg {
+                Reg::X => self.state.x = value,
+                Reg::Y => self.state.y = value,
+                Reg::A => self.state.a = value,
+                Reg::S => self.state.status = value,
+            };
+            self
+        }
+
+        pub fn update_cycles(&mut self, cycles: u32) -> &mut Self {
+            self.cycles += cycles;
+            self
+        }
+
+        /**
+         * Calculate new Status flag based on the operation
+         */
+        pub fn update_status(
+            &mut self,
+            m: u8,
+            n: u8,
+            result: u8,
+            flags: u8,
+        ) -> &mut Self {
+            let mut new_status = self.get_reg(Reg::S);
+            let mut merge_status = |flag: u8, value: bool| {
+                if value {
+                    new_status |= flag
+                } else {
+                    new_status &= !flag
+                }
+            };
+
+            if flags & C_FLAG != 0 {
+                merge_status(C_FLAG, m as u16 + n as u16 > 0xFF);
+            }
+
+            if flags & Z_FLAG != 0 {
+                merge_status(Z_FLAG, result == 0);
+            }
+
+            if flags & N_FLAG != 0 {
+                merge_status(N_FLAG, result & SIGN_BIT != 0);
+            }
+
+            // Overflow logic is a bit more complicated
+
+            // XOR-ing m & n is going to clear the SIGN_BIT if it's not == in BOTH
+            if flags & V_FLAG != 0 {
+                let operands_match = ((m ^ n) & SIGN_BIT) == 0;
+                let result_operands_match = ((m ^ result) & SIGN_BIT) == 0;
+                let overflow = operands_match && !result_operands_match;
+
+                merge_status(V_FLAG, overflow);
+            }
+
+            self.set_reg(Reg::S, new_status);
+
+            self
+        }
+
+        pub fn adc(&mut self, mode: Mode) {
+            let operand = self.lookup(mode);
+            let accumulator = self.state.a;
+            let carry = self.state.status & 1;
+            println!(
+                "operand {} accumulator {} carry {}",
+                operand, accumulator, carry
+            );
+            let (mut result, ..) = accumulator.overflowing_add(operand);
+            result += carry;
+            self.set_reg(Reg::A, result)
+                .update_pc(2)
+                .update_status(
+                    accumulator,
+                    operand,
+                    result,
+                    N_FLAG | Z_FLAG | C_FLAG | V_FLAG,
+                )
+                .update_cycles(2);
+        }
+
+        pub fn and(&mut self, mode: Mode) {
+            let operand = self.lookup(mode);
+            let accumulator = self.get_reg(Reg::A);
+            let result = accumulator & operand;
+            self.set_reg(Reg::A, result)
+                .update_pc(2)
+                .update_status(accumulator, operand, result, N_FLAG | Z_FLAG)
+                .update_cycles(2);
+        }
+        pub fn asl(&mut self, mode: Mode) {
+            let operand = self.lookup(mode);
+            let result = operand << 1;
+            let accumulator = self.get_reg(Reg::A);
+            self.set_reg(Reg::A, result)
+                .update_status(
+                    accumulator,
+                    operand,
+                    result,
+                    Z_FLAG | C_FLAG | N_FLAG,
+                )
+                .update_cycles(2);
+        }
+
+        pub fn lda(&mut self, mode: Mode) {
+            let operand = self.lookup(mode);
+            println!("Load accumulator with {}", operand);
+            self.set_reg(Reg::A, operand)
+                .update_pc(2)
+                .update_status(operand, operand, operand, Z_FLAG | N_FLAG)
+                .update_cycles(2);
+        }
+
+        pub fn sec(&mut self, _mode: Mode) {
+            println!("Set carry flag");
+            self.state.status |= C_FLAG;
+            self.update_pc(1).update_cycles(2);
+        }
+
+        pub fn nop(&mut self, _mode: Mode) {
+            println!("NOP");
+            self.update_pc(1).update_cycles(1);
         }
     }
 }
@@ -213,7 +293,7 @@ pub mod nescpu {
 mod test {
     use super::*;
     use nescpu::Memory;
-    use nescpu::State;
+    use nescpu::Processor;
 
     #[test]
     fn test_memory() {
@@ -248,84 +328,62 @@ mod test {
             (0xd0, 0xd0, 0x1a0, 0b0000_0000),
         ];
 
+        let mut cpu = Processor::new(None);
+
         for i in 0..overflow_table.len() {
             let (m, n, result, expected) = overflow_table[i];
-            // cpu.set_status(m, n, result as u8, V_FLAG);
-            let status = nescpu::calc_status(0, (m, n, result as u8, V_FLAG));
+            cpu.update_status(m, n, result as u8, V_FLAG);
             assert_eq!(
-                status, expected,
+                cpu.state.status, expected,
                 "VFLAG m: {} n: {} result: {}",
                 m, n, result
             );
         }
     }
 
+    fn run_cpu(cpu: &mut Processor, program: Vec<u8>) {
+        let reset_vector =
+            [(ROM_START & 0xFF) as u8, ((ROM_START & 0xFF00) >> 8) as u8];
+
+        // Load the program into memory
+        cpu.mem.load(ROM_START, &program);
+        // Setup reset vector to start PC at ROM_START
+        cpu.mem.load(RESET_VECTOR, &reset_vector);
+
+        cpu.reset();
+
+        loop {
+            let old_pc = cpu.state.pc;
+            cpu.exec();
+
+            if old_pc == cpu.state.pc {
+                panic!("Program counter did not update, force quitting!");
+            }
+
+            if cpu.state.pc - ROM_START >= program.len() {
+                break;
+            }
+        }
+    }
+
     #[test]
     fn test_adc() {
-        let base = State {
-            pc: 0,
-            a: 0,
-            x: 0,
-            y: 0,
-            status: 0,
-            cycles: 0,
-        };
+        let mut cpu = Processor::new(None);
+        // LDA# 01 ; load accumulator
+        // SEC     ; set carry flag
+        // ADC# 01 ; add with carry
+        run_cpu(&mut cpu, vec![0xa9, 0x01, 0x38, 0x69, 0x01]);
+
         // a + operand + carry_flag
-        let state = nescpu::adc(
-            State {
-                a: 1,
-                status: 0 | C_FLAG,
-                ..base
-            },
-            1,
-        );
-        assert_eq!(state.a, 3);
-        assert_eq!(state.pc, 2);
-        assert_eq!(state.cycles, 2);
-
-        let state = nescpu::adc(State { a: 1, ..base }, 0xFF);
-        assert_eq!(state.a, 0);
-        assert_eq!(state.status, Z_FLAG | C_FLAG);
-
-        // This will check the overflow logic of 0xFF + 0xFF + 1 = 0xFF
-        let state = nescpu::adc(
-            State {
-                a: 0xFF,
-                status: C_FLAG,
-                ..base
-            },
-            0xFF,
-        );
-        assert_eq!(state.a, 0xFF);
-        assert_eq!(state.status, N_FLAG | C_FLAG);
-
-        let state = nescpu::adc(State { a: 0x50, ..base }, 0x50);
-        assert_eq!(state.a, 0xa0);
-        assert_eq!(state.status, N_FLAG | V_FLAG);
+        assert_eq!(cpu.state.a, 3, "ADC result should be {}", 3);
     }
 
     #[test]
     fn test_and() {
-        let base = State {
-            pc: 0,
-            a: 0,
-            x: 0,
-            y: 0,
-            status: 0,
-            cycles: 0,
-        };
-        let state = nescpu::and(State { a: 0b11, ..base }, 0b10);
-        assert_eq!(state.a, 0b10);
-        assert_eq!(state.cycles, 2);
-
-        // Negative flag
-        let state = nescpu::and(State { a: 0xff, ..base }, N_FLAG);
-        assert_eq!(state.a, 0b1000_0000);
-        assert_eq!(state.status, N_FLAG);
-
-        // Zero flag
-        let state = nescpu::and(State { a: 0xff, ..base }, 0);
-        assert_eq!(state.a, 0);
-        assert_eq!(state.status, Z_FLAG);
+        let mut cpu = Processor::new(None);
+        // LDA# 03
+        // AND# 02
+        run_cpu(&mut cpu, vec![0xa9, 0b11, 0x29, 0b10]);
+        assert_eq!(cpu.state.a, 0b10, "AND result should be {}", 0b10);
     }
 }
