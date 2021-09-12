@@ -18,6 +18,8 @@ pub const BMI: u8 = 0x30;
 #[allow(dead_code)]
 pub const BNE: u8 = 0xd0;
 #[allow(dead_code)]
+pub const BPL: u8 = 0x10;
+#[allow(dead_code)]
 pub const CLC: u8 = 0x18;
 #[allow(dead_code)]
 pub const SEC: u8 = 0x38;
@@ -46,6 +48,7 @@ impl Processor {
         match (c, b, a) {
             (0, 1, 1) => (Processor::bit, Mode::ZeroPage),
             (0, 3, 1) => (Processor::bit, Mode::Absolute),
+            (0, 4, 0) => (Processor::bpl, Mode::Immediate),
             (0, 4, 1) => (Processor::bmi, Mode::Immediate),
             (0, 4, 4) => (Processor::bcc, Mode::Immediate),
             (0, 4, 5) => (Processor::bcs, Mode::Immediate),
@@ -175,6 +178,18 @@ impl Processor {
         let operand = self.lookup(mode);
         let mut cycles = 2;
         if self.state.status & Z_FLAG == 0 {
+            cycles += 1;
+            self.update_pc(operand as i8 as i32);
+        } else {
+            self.update_pc(opcode_len(mode));
+        }
+        self.update_cycles(cycles);
+    }
+
+    pub fn bpl(&mut self, mode: Mode) {
+        let operand = self.lookup(mode);
+        let mut cycles = 2;
+        if self.state.status & N_FLAG == 0 {
             cycles += 1;
             self.update_pc(operand as i8 as i32);
         } else {
