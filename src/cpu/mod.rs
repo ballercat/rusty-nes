@@ -11,7 +11,9 @@ const V_FLAG: u8 = 0b0100_0000;
 const Z_FLAG: u8 = 0b0000_0010;
 const C_FLAG: u8 = 0b0000_0001;
 
+mod base;
 mod memory;
+use base::{Processor, State};
 use memory::Memory;
 
 pub mod nescpu {
@@ -37,21 +39,6 @@ pub mod nescpu {
     );
 
     pub type Opcode = fn(&mut Processor, Mode) -> ();
-
-    #[derive(Copy, Clone)]
-    pub struct State {
-        pub a: u8,
-        pub pc: usize,
-        pub x: u8,
-        pub y: u8,
-        pub status: u8,
-    }
-
-    pub struct Processor {
-        pub mem: Memory,
-        pub state: State,
-        pub cycles: u32,
-    }
 
     impl Processor {
         pub fn new(mem: Option<Memory>) -> Processor {
@@ -264,7 +251,6 @@ pub mod nescpu {
 #[cfg(test)]
 mod test {
     use super::*;
-    use nescpu::Processor;
 
     const ROM_START: usize = 0x8000;
 
