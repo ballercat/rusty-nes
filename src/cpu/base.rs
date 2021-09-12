@@ -51,7 +51,7 @@ impl Processor {
     }
 
     pub fn update_pc(&mut self, delta: i32) -> &mut Self {
-        println!("Update pc {} with {}", self.state.pc, delta);
+        println!("Update pc {:#04x} with {}", self.state.pc, delta);
         if delta.is_negative() {
             self.state.pc -= delta.wrapping_abs() as u32 as usize;
         } else {
