@@ -32,12 +32,4 @@ impl Processor {
             Mode::Accumulator => self.state.a,
         }
     }
-
-    pub fn get_byte_length(&mut self, mode: Mode) -> usize {
-        match mode {
-            Mode::Absolute => 3,
-            Mode::ZeroPage | Mode::Immediate => 2,
-            _ => 1,
-        }
-    }
 }

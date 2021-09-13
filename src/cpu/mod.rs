@@ -11,6 +11,8 @@ impl Processor {
         let lower = self.mem.read(RESET_VECTOR) as usize;
         let upper = self.mem.read(RESET_VECTOR + 1) as usize;
         self.state.pc = lower | (upper << 8);
+
+        self.state.sp = 0xff;
     }
 
     pub fn exec(&mut self) {

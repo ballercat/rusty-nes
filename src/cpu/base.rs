@@ -1,4 +1,4 @@
-use super::memory::Memory;
+use super::memory::{Memory, ZERO_PAGE_TOP};
 
 pub const N_FLAG: u8 = 0b1000_0000;
 pub const V_FLAG: u8 = 0b0100_0000;
@@ -19,6 +19,7 @@ pub enum Reg {
 #[derive(Copy, Clone)]
 pub struct State {
     pub a: u8,
+    pub sp: u8,
     pub pc: usize,
     pub x: u8,
     pub y: u8,
@@ -35,6 +36,7 @@ impl Processor {
     pub fn new(mem: Option<Memory>) -> Processor {
         let state = State {
             a: 0,
+            sp: 0,
             pc: 0,
             x: 0,
             y: 0,
@@ -48,6 +50,29 @@ impl Processor {
     }
     pub fn get_pc(&self) -> usize {
         self.state.pc
+    }
+
+    pub fn stack_top(&self) -> usize {
+        ZERO_PAGE_TOP + self.state.sp as usize
+    }
+
+    pub fn stack_push(&mut self, value: u8) {
+        self.mem.write(self.stack_top(), value);
+        self.state.sp = if self.state.sp == 0 {
+            0xff
+        } else {
+            self.state.sp - 1
+        };
+    }
+
+    pub fn stack_pop(&mut self) -> u8 {
+        let result = self.mem.read(self.stack_top());
+        self.state.sp = if self.state.sp == 0xff {
+            0
+        } else {
+            self.state.sp + 1
+        };
+        result
     }
 
     pub fn update_pc(&mut self, delta: i32) -> &mut Self {

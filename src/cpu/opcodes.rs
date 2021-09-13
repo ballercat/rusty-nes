@@ -46,6 +46,10 @@ impl Processor {
         let c = value & 0b0000_0011;
 
         match (c, b, a) {
+            (0, 2, 0) => (Processor::php, Mode::Implied),
+            (0, 2, 1) => (Processor::plp, Mode::Implied),
+            (0, 2, 2) => (Processor::pha, Mode::Implied),
+            (0, 2, 3) => (Processor::pla, Mode::Implied),
             (0, 1, 1) => (Processor::bit, Mode::ZeroPage),
             (0, 3, 1) => (Processor::bit, Mode::Absolute),
             (0, 4, 0) => (Processor::bpl, Mode::Immediate),
@@ -210,6 +214,27 @@ impl Processor {
             .update_pc(opcode_len(mode))
             .update_status(operand, operand, operand, Z_FLAG | N_FLAG)
             .update_cycles(2);
+    }
+
+    pub fn pha(&mut self, mode: Mode) {
+        self.stack_push(self.state.a);
+
+        self.update_pc(opcode_len(mode)).update_cycles(2);
+    }
+
+    pub fn php(&mut self, mode: Mode) {
+        self.stack_push(self.state.status);
+        self.update_pc(opcode_len(mode)).update_cycles(2);
+    }
+
+    pub fn pla(&mut self, mode: Mode) {
+        self.state.a = self.stack_pop();
+        self.update_pc(opcode_len(mode)).update_cycles(3);
+    }
+
+    pub fn plp(&mut self, mode: Mode) {
+        self.state.status = self.stack_pop();
+        self.update_pc(opcode_len(mode)).update_cycles(3);
     }
 
     pub fn sec(&mut self, mode: Mode) {
