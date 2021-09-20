@@ -112,7 +112,7 @@ mod test {
         run_cpu(&mut cpu, vec![BIT_Z, 0xFF, BMI, 0xfe]);
         assert_eq!(cpu.state.pc, ROM_START, "Branch via BMI");
 
-        run_cpu(&mut cpu, vec![BIT_A, 0xFF, 0x00, BMI, 0xfd]);
+        run_cpu(&mut cpu, vec![BIT_A, 0x00, 0xff, BMI, 0xfd]);
         assert_eq!(cpu.state.pc, ROM_START, "Branch via BMI");
 
         run_cpu(&mut cpu, vec![LDA, 0x01, BNE, 0xfe]);

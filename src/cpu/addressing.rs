@@ -14,8 +14,8 @@ impl Processor {
         match mode {
             Mode::Absolute => {
                 self.cycles += 2;
-                let low = self.mem.read(self.state.pc + 1) as usize;
-                let high = self.mem.read(self.state.pc + 2) as usize;
+                let high = self.mem.read(self.state.pc + 1) as usize;
+                let low = self.mem.read(self.state.pc + 2) as usize;
                 let address = low | (high << 8);
                 self.mem.read(address)
             }

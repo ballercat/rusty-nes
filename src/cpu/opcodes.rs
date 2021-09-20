@@ -1,5 +1,7 @@
 use super::addressing::Mode;
 use super::base::{Processor, Reg, C_FLAG, N_FLAG, V_FLAG, Z_FLAG};
+use regex::Regex;
+use std::collections::HashMap;
 
 #[allow(dead_code)]
 pub const ADC: u8 = 0x69;
@@ -28,13 +30,114 @@ pub const NOP: u8 = 0xea;
 #[allow(dead_code)]
 pub const LDA: u8 = 0xa9;
 
+pub const MODE_IML: u8 = 0b0000_0000;
+pub const MODE_ZPG: u8 = 0b0000_0100;
+pub const MODE_IMM: u8 = 0b0000_1000;
+pub const MODE_ABS: u8 = 0b0000_1100;
+pub const MODE_INY: u8 = 0b0001_0000;
+pub const MODE_ZPX: u8 = 0b0001_0100;
+pub const MODE_ABY: u8 = 0b0001_1000;
+pub const MODE_ABX: u8 = 0b0001_1100;
+
 pub type Opcode = fn(&mut Processor, Mode) -> ();
+
+lazy_static! {
+    static ref OPCODE_HASHMAP: HashMap<&'static str, u8> = {
+        let mut m = HashMap::new();
+        m.insert("ADC", ADC);
+        m.insert("BCC", BCC);
+        m.insert("BCS", BCS);
+        m.insert("BEQ", BEQ);
+        m.insert("BIT", BIT_Z);
+        m.insert("BMI", BMI);
+        m.insert("BNE", BNE);
+        m.insert("BPL", BPL);
+        m.insert("CLC", CLC);
+        m.insert("SEC", SEC);
+        m.insert("NOP", NOP);
+        m.insert("LDA", LDA);
+
+        m
+    };
+}
 
 pub fn opcode_len(mode: Mode) -> i32 {
     match mode {
         Mode::Absolute => 3,
         Mode::ZeroPage | Mode::Immediate => 2,
         _ => 1,
+    }
+}
+
+#[cfg(test)]
+pub fn apply_address_mode(opcode: u8, mode: u8) -> u8 {
+    (opcode & 0b1110_0011) | mode
+}
+
+#[cfg(test)]
+pub fn encode(line: &String) -> Vec<u8> {
+    lazy_static! {
+        static ref IMPLIED: Regex = Regex::new(r"^(<name>[A-Z]{3})$").unwrap();
+        static ref ACCUMULATOR: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) A$").unwrap();
+        static ref ABSOLUTE: Regex = Regex::new(
+            r"^(?P<name>[A-Z]{3}) \$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2})$",
+        )
+        .unwrap();
+        static ref ABSOLUTE_X: Regex = Regex::new(
+            r"^(?P<name>[A-Z]{3}) \$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2}),X$",
+        )
+        .unwrap();
+        static ref ABSOLUTE_Y: Regex = Regex::new(
+            r"^(?P<name>[A-Z]{3}) \$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2}),Y$",
+        )
+        .unwrap();
+        static ref IMMEDIATE: Regex =
+            Regex::new(r"^(?P<name>[A-Z]{3}) #\$(?P<value>[A-F0-9]{2})$").unwrap();
+        static ref INDIRECT: Regex =
+            Regex::new(r"^(?P<name>[A-Z]{3}) \(\$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2})\)$").unwrap();
+        static ref X_INDEX: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) \(\$<value>, X\)$").unwrap();
+        static ref Y_INDEX: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) \(\$<value>\),Y$").unwrap();
+        static ref ZERO_PAGE: Regex =
+            Regex::new(r"^(?P<name>[A-Z]{3}) \$(?P<value>[A-F0-9]{2})$").unwrap();
+    }
+
+    let apply_regex = |regex: &Regex, mode: u8| {
+        let captures = regex.captures(line).unwrap();
+        let opcode = apply_address_mode(
+            *OPCODE_HASHMAP.get(&captures["name"]).unwrap(),
+            mode,
+        );
+        let mut result: Vec<u8> = Vec::new();
+        result.push(opcode);
+        for cap in captures.iter().skip(2) {
+            println!("CAPTURE {}", &cap.unwrap().as_str());
+            result
+                .push(u8::from_str_radix(&cap.unwrap().as_str(), 16).unwrap());
+        }
+        if result.len() == 3 {
+            result.swap(1, 2);
+        }
+        result
+    };
+
+    if ABSOLUTE.is_match(line) {
+        apply_regex(&ABSOLUTE, MODE_ABS)
+    } else if ABSOLUTE_X.is_match(line) {
+        apply_regex(&ABSOLUTE_X, MODE_ABX)
+    } else if ABSOLUTE_Y.is_match(line) {
+        apply_regex(&ABSOLUTE_Y, MODE_ABY)
+    } else if IMMEDIATE.is_match(line) {
+        apply_regex(&IMMEDIATE, MODE_IMM)
+    } else if ZERO_PAGE.is_match(line) {
+        apply_regex(&ZERO_PAGE, MODE_ZPG)
+    } else if INDIRECT.is_match(line) {
+        apply_regex(&INDIRECT, MODE_ABS)
+    } else if X_INDEX.is_match(line) {
+        apply_regex(&X_INDEX, MODE_IML)
+    } else if Y_INDEX.is_match(line) {
+        apply_regex(&Y_INDEX, MODE_INY)
+    } else {
+        apply_regex(&IMPLIED, MODE_IML)
     }
 }
 
@@ -245,5 +348,41 @@ impl Processor {
     pub fn nop(&mut self, mode: Mode) {
         println!("NOP");
         self.update_pc(opcode_len(mode)).update_cycles(1);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_encode() {
+        let program = encode(&String::from("ADC #$A0"));
+        assert_eq!(program[0], ADC);
+        assert_eq!(program[1], 0xa0);
+
+        let program = encode(&String::from("ADC $A0"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_ZPG));
+        assert_eq!(program[1], 0xa0);
+
+        let program = encode(&String::from("ADC $A0FF"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_ABS));
+        assert_eq!(program[1], 0xff);
+        assert_eq!(program[2], 0xa0);
+
+        let program = encode(&String::from("ADC $A0FF,X"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_ABX));
+        assert_eq!(program[1], 0xff);
+        assert_eq!(program[2], 0xa0);
+
+        let program = encode(&String::from("ADC $A0FF,Y"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_ABY));
+        assert_eq!(program[1], 0xff);
+        assert_eq!(program[2], 0xa0);
+
+        let program = encode(&String::from("ADC ($AABB)"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_ABS));
+        assert_eq!(program[1], 0xbb);
+        assert_eq!(program[2], 0xaa);
     }
 }
