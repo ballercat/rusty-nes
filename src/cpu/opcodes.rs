@@ -34,6 +34,7 @@ pub const MODE_IML: u8 = 0b0000_0000;
 pub const MODE_ZPG: u8 = 0b0000_0100;
 pub const MODE_IMM: u8 = 0b0000_1000;
 pub const MODE_ABS: u8 = 0b0000_1100;
+pub const MODE_INX: u8 = 0b0000_0000;
 pub const MODE_INY: u8 = 0b0001_0000;
 pub const MODE_ZPX: u8 = 0b0001_0100;
 pub const MODE_ABY: u8 = 0b0001_1000;
@@ -95,10 +96,14 @@ pub fn encode(line: &String) -> Vec<u8> {
             Regex::new(r"^(?P<name>[A-Z]{3}) #\$(?P<value>[A-F0-9]{2})$").unwrap();
         static ref INDIRECT: Regex =
             Regex::new(r"^(?P<name>[A-Z]{3}) \(\$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2})\)$").unwrap();
-        static ref X_INDEX: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) \(\$<value>, X\)$").unwrap();
-        static ref Y_INDEX: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) \(\$<value>\),Y$").unwrap();
+        static ref X_INDEX: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) \(\$(?P<value>[A-F0-9]{2}),X\)$").unwrap();
+        static ref Y_INDEX: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) \(\$(?P<value>[A-F0-9]{2})\),Y$").unwrap();
         static ref ZERO_PAGE: Regex =
             Regex::new(r"^(?P<name>[A-Z]{3}) \$(?P<value>[A-F0-9]{2})$").unwrap();
+        static ref ZERO_PAGE_X: Regex =
+            Regex::new(r"^(?P<name>[A-Z]{3}) \$(?P<value>[A-F0-9]{2}),X$").unwrap();
+        static ref ZERO_PAGE_Y: Regex =
+            Regex::new(r"^(?P<name>[A-Z]{3}) \$(?P<value>[A-F0-9]{2}),Y$").unwrap();
     }
 
     let apply_regex = |regex: &Regex, mode: u8| {
@@ -136,6 +141,10 @@ pub fn encode(line: &String) -> Vec<u8> {
         apply_regex(&X_INDEX, MODE_IML)
     } else if Y_INDEX.is_match(line) {
         apply_regex(&Y_INDEX, MODE_INY)
+    } else if ZERO_PAGE_X.is_match(line) {
+        apply_regex(&ZERO_PAGE_X, MODE_ZPX)
+    } else if ZERO_PAGE_Y.is_match(line) {
+        apply_regex(&ZERO_PAGE_Y, MODE_ZPX)
     } else {
         apply_regex(&IMPLIED, MODE_IML)
     }
@@ -380,9 +389,21 @@ mod test {
         assert_eq!(program[1], 0xff);
         assert_eq!(program[2], 0xa0);
 
+        // indirect instruction encoding. Note that ADC does not actually have an indirect
+        // version on the real cpu. This is for testing purposes only.
         let program = encode(&String::from("ADC ($AABB)"));
+        // indirect mode is just an absolute address lookup by another name used for JMP
+        // instruction. So the resulting addressing constant will still MODE_ABS
         assert_eq!(program[0], apply_address_mode(ADC, MODE_ABS));
         assert_eq!(program[1], 0xbb);
         assert_eq!(program[2], 0xaa);
+
+        let program = encode(&String::from("ADC ($AA,X)"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_INX));
+        assert_eq!(program[1], 0xaa);
+
+        let program = encode(&String::from("ADC ($BB),Y"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_INY));
+        assert_eq!(program[1], 0xbb);
     }
 }
