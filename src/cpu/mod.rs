@@ -151,27 +151,57 @@ mod test {
         ",
         );
         run_program(&mut cpu, &program);
-        // run_cpu(&mut cpu, vec![SEC, BCS, 0x03, NOP, CLC, BCC, 0xfb]);
         assert_eq!(
             cpu.state.pc, ROM_START,
             "Branch BCS and reverse branch with BCC"
         );
 
-        // run_cpu(&mut cpu, vec![LDA, 0, BEQ, 0xfe]);
-        // assert_eq!(cpu.state.pc, ROM_START, "Branch via BEQ");
+        let program = String::from(
+            "
+        LDA #$00;
+        BEQ !$FE;
+        ",
+        );
+        run_program(&mut cpu, &program);
+        assert_eq!(cpu.state.pc, ROM_START, "Branch via BEQ");
 
-        // cpu.mem.write(0xFF, N_FLAG);
         // // Testing BIT as well as BMI below
-        // run_cpu(&mut cpu, vec![BIT_Z, 0xFF, BMI, 0xfe]);
-        // assert_eq!(cpu.state.pc, ROM_START, "Branch via BMI");
 
-        // run_cpu(&mut cpu, vec![BIT_A, 0x00, 0xff, BMI, 0xfd]);
-        // assert_eq!(cpu.state.pc, ROM_START, "Branch via BMI");
+        cpu.mem.write(0xFF, N_FLAG); // write to zer-page address 0xff
+        let program = String::from(
+            "
+        BIT $FF  ; bit test with value using zero-page
+        BMI !$FE ; branch
+       ",
+        );
+        run_program(&mut cpu, &program);
+        assert_eq!(cpu.state.pc, ROM_START, "Branch via BMI");
 
-        // run_cpu(&mut cpu, vec![LDA, 0x01, BNE, 0xfe]);
-        // assert_eq!(cpu.state.pc, ROM_START, "Branch via BNE");
+        let program = String::from(
+            "
+        BIT $FF00; $LLHH low & high bytes are swapped in memory
+        BMI !$FD ;
+        ",
+        );
+        run_program(&mut cpu, &program);
+        assert_eq!(cpu.state.pc, ROM_START, "Branch via BMI");
 
-        // run_cpu(&mut cpu, vec![LDA, 0x01, BPL, 0xfe]);
-        // assert_eq!(cpu.state.pc, ROM_START, "Branch via BPL");
+        let program = String::from(
+            "
+        LDA #$01;
+        BNE !$FE;
+        ",
+        );
+        run_program(&mut cpu, &program);
+        assert_eq!(cpu.state.pc, ROM_START, "Branch via BNE");
+
+        let program = String::from(
+            "
+        LDA #$01;
+        BPL !$FE;
+        ",
+        );
+        run_program(&mut cpu, &program);
+        assert_eq!(cpu.state.pc, ROM_START, "Branch via BPL");
     }
 }
