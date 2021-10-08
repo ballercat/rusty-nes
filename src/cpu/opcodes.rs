@@ -33,10 +33,14 @@ pub const LDA: u8 = 0xa9;
 pub const MODE_IML: u8 = 0b0000_0000;
 pub const MODE_ZPG: u8 = 0b0000_0100;
 pub const MODE_IMM: u8 = 0b0000_1000;
+pub const MODE_ACC: u8 = 0b0000_1000;
 pub const MODE_ABS: u8 = 0b0000_1100;
+pub const MODE_IND: u8 = 0b0000_1100;
 pub const MODE_INX: u8 = 0b0000_0000;
 pub const MODE_INY: u8 = 0b0001_0000;
+pub const MODE_REL: u8 = 0b0001_0000;
 pub const MODE_ZPX: u8 = 0b0001_0100;
+pub const MODE_ZPY: u8 = 0b0001_0100;
 pub const MODE_ABY: u8 = 0b0001_1000;
 pub const MODE_ABX: u8 = 0b0001_1100;
 
@@ -46,6 +50,8 @@ lazy_static! {
     static ref OPCODE_HASHMAP: HashMap<&'static str, u8> = {
         let mut m = HashMap::new();
         m.insert("ADC", ADC);
+        m.insert("AND", 0x29);
+        m.insert("ASL", 0x06);
         m.insert("BCC", BCC);
         m.insert("BCS", BCS);
         m.insert("BEQ", BEQ);
@@ -53,6 +59,9 @@ lazy_static! {
         m.insert("BMI", BMI);
         m.insert("BNE", BNE);
         m.insert("BPL", BPL);
+        m.insert("BRK", 0x00);
+        m.insert("BVC", 0x50);
+        m.insert("BVS", 0x70);
         m.insert("CLC", CLC);
         m.insert("SEC", SEC);
         m.insert("NOP", NOP);
@@ -70,40 +79,47 @@ pub fn opcode_len(mode: Mode) -> i32 {
     }
 }
 
-#[cfg(test)]
 pub fn apply_address_mode(opcode: u8, mode: u8) -> u8 {
+    // if the mode is implied then leave the raw opcode whatever it might be.
+    // There are multiple instructions that use implied mode but do not share
+    // the implied mode mask. In essence the mode has no impact on the opcode value
+    if mode == MODE_IML {
+        return opcode;
+    }
+
     (opcode & 0b1110_0011) | mode
 }
 
-#[cfg(test)]
 pub fn encode(line: &String) -> Vec<u8> {
     lazy_static! {
-        static ref IMPLIED: Regex = Regex::new(r"^(<name>[A-Z]{3})$").unwrap();
-        static ref ACCUMULATOR: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) A$").unwrap();
+        static ref IMPLIED: Regex = Regex::new(r"^(?P<name>[A-Z]{3})[ ]*;.*$").unwrap();
+        static ref ACCUMULATOR: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) A[ ]*;.*$").unwrap();
         static ref ABSOLUTE: Regex = Regex::new(
-            r"^(?P<name>[A-Z]{3}) \$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2})$",
+            r"^(?P<name>[A-Z]{3}) \$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2})[ ]*;.*$",
         )
         .unwrap();
         static ref ABSOLUTE_X: Regex = Regex::new(
-            r"^(?P<name>[A-Z]{3}) \$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2}),X$",
+            r"^(?P<name>[A-Z]{3}) \$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2}),X[ ]*;.*$",
         )
         .unwrap();
         static ref ABSOLUTE_Y: Regex = Regex::new(
-            r"^(?P<name>[A-Z]{3}) \$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2}),Y$",
+            r"^(?P<name>[A-Z]{3}) \$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2}),Y[ ]*;.*$",
         )
         .unwrap();
         static ref IMMEDIATE: Regex =
-            Regex::new(r"^(?P<name>[A-Z]{3}) #\$(?P<value>[A-F0-9]{2})$").unwrap();
+            Regex::new(r"^(?P<name>[A-Z]{3}) #\$(?P<value>[A-F0-9]{2})[ ]*;.*$").unwrap();
         static ref INDIRECT: Regex =
-            Regex::new(r"^(?P<name>[A-Z]{3}) \(\$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2})\)$").unwrap();
-        static ref X_INDEX: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) \(\$(?P<value>[A-F0-9]{2}),X\)$").unwrap();
-        static ref Y_INDEX: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) \(\$(?P<value>[A-F0-9]{2})\),Y$").unwrap();
+            Regex::new(r"^(?P<name>[A-Z]{3}) \(\$(?P<low>[A-F0-9]{2})(?P<high>[A-F0-9]{2})\)[ ]*;.*$").unwrap();
+        static ref X_INDEX: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) \(\$(?P<value>[A-F0-9]{2}),X\)[ ]*;.*$").unwrap();
+        static ref Y_INDEX: Regex = Regex::new(r"^(?P<name>[A-Z]{3}) \(\$(?P<value>[A-F0-9]{2})\),Y[ ]*;.*$").unwrap();
         static ref ZERO_PAGE: Regex =
-            Regex::new(r"^(?P<name>[A-Z]{3}) \$(?P<value>[A-F0-9]{2})$").unwrap();
+            Regex::new(r"^(?P<name>[A-Z]{3}) \$(?P<value>[A-F0-9]{2})[ ]*;.*$").unwrap();
+        static ref RELATIVE: Regex =
+            Regex::new(r"^(?P<name>[A-Z]{3}) !\$(?P<value>[A-F0-9]{2})[ ]*;.*$").unwrap();
         static ref ZERO_PAGE_X: Regex =
-            Regex::new(r"^(?P<name>[A-Z]{3}) \$(?P<value>[A-F0-9]{2}),X$").unwrap();
+            Regex::new(r"^(?P<name>[A-Z]{3}) \$(?P<value>[A-F0-9]{2}),X[ ]*;.*$").unwrap();
         static ref ZERO_PAGE_Y: Regex =
-            Regex::new(r"^(?P<name>[A-Z]{3}) \$(?P<value>[A-F0-9]{2}),Y$").unwrap();
+            Regex::new(r"^(?P<name>[A-Z]{3}) \$(?P<value>[A-F0-9]{2}),Y[ ]*;.*$").unwrap();
     }
 
     let apply_regex = |regex: &Regex, mode: u8| {
@@ -115,7 +131,7 @@ pub fn encode(line: &String) -> Vec<u8> {
         let mut result: Vec<u8> = Vec::new();
         result.push(opcode);
         for cap in captures.iter().skip(2) {
-            println!("CAPTURE {}", &cap.unwrap().as_str());
+            // println!("CAPTURE {}", &cap.unwrap().as_str());
             result
                 .push(u8::from_str_radix(&cap.unwrap().as_str(), 16).unwrap());
         }
@@ -127,24 +143,28 @@ pub fn encode(line: &String) -> Vec<u8> {
 
     if ABSOLUTE.is_match(line) {
         apply_regex(&ABSOLUTE, MODE_ABS)
+    } else if ACCUMULATOR.is_match(line) {
+        apply_regex(&ACCUMULATOR, MODE_ACC)
     } else if ABSOLUTE_X.is_match(line) {
         apply_regex(&ABSOLUTE_X, MODE_ABX)
     } else if ABSOLUTE_Y.is_match(line) {
         apply_regex(&ABSOLUTE_Y, MODE_ABY)
     } else if IMMEDIATE.is_match(line) {
         apply_regex(&IMMEDIATE, MODE_IMM)
+    } else if RELATIVE.is_match(line) {
+        apply_regex(&RELATIVE, MODE_REL)
     } else if ZERO_PAGE.is_match(line) {
         apply_regex(&ZERO_PAGE, MODE_ZPG)
     } else if INDIRECT.is_match(line) {
-        apply_regex(&INDIRECT, MODE_ABS)
+        apply_regex(&INDIRECT, MODE_IND)
     } else if X_INDEX.is_match(line) {
-        apply_regex(&X_INDEX, MODE_IML)
+        apply_regex(&X_INDEX, MODE_INX)
     } else if Y_INDEX.is_match(line) {
         apply_regex(&Y_INDEX, MODE_INY)
     } else if ZERO_PAGE_X.is_match(line) {
         apply_regex(&ZERO_PAGE_X, MODE_ZPX)
     } else if ZERO_PAGE_Y.is_match(line) {
-        apply_regex(&ZERO_PAGE_Y, MODE_ZPX)
+        apply_regex(&ZERO_PAGE_Y, MODE_ZPY)
     } else {
         apply_regex(&IMPLIED, MODE_IML)
     }
@@ -216,6 +236,7 @@ impl Processor {
         let operand = self.lookup(mode);
         let result = operand << 1;
 
+        println!("ASL: operand {} result {}", operand, result);
         match mode {
             Mode::Accumulator => {
                 self.set_reg(Reg::A, result);
@@ -366,43 +387,61 @@ mod test {
 
     #[test]
     fn test_encode() {
-        let program = encode(&String::from("ADC #$A0"));
-        assert_eq!(program[0], ADC);
+        let program = encode(&String::from("ADC;"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_IML));
+
+        // test comments
+        let program = encode(&String::from("ADC; this is a comment"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_IML));
+
+        let program = encode(&String::from(
+            "ADC     ;semi-colon can be spaced however needed",
+        ));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_IML));
+
+        let program = encode(&String::from("ADC #$A0;"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_IMM));
         assert_eq!(program[1], 0xa0);
 
-        let program = encode(&String::from("ADC $A0"));
+        let program = encode(&String::from("ADC $A0;"));
         assert_eq!(program[0], apply_address_mode(ADC, MODE_ZPG));
         assert_eq!(program[1], 0xa0);
 
-        let program = encode(&String::from("ADC $A0FF"));
+        let program = encode(&String::from("ADC $A0,X;"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_ZPX));
+        assert_eq!(program[1], 0xa0);
+
+        let program = encode(&String::from("ADC $A0,Y;"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_ZPY));
+        assert_eq!(program[1], 0xa0);
+
+        let program = encode(&String::from("ADC $A0FF;"));
         assert_eq!(program[0], apply_address_mode(ADC, MODE_ABS));
         assert_eq!(program[1], 0xff);
         assert_eq!(program[2], 0xa0);
 
-        let program = encode(&String::from("ADC $A0FF,X"));
+        let program = encode(&String::from("ADC $A0FF,X;"));
         assert_eq!(program[0], apply_address_mode(ADC, MODE_ABX));
         assert_eq!(program[1], 0xff);
         assert_eq!(program[2], 0xa0);
 
-        let program = encode(&String::from("ADC $A0FF,Y"));
+        let program = encode(&String::from("ADC $A0FF,Y;"));
         assert_eq!(program[0], apply_address_mode(ADC, MODE_ABY));
         assert_eq!(program[1], 0xff);
         assert_eq!(program[2], 0xa0);
 
         // indirect instruction encoding. Note that ADC does not actually have an indirect
         // version on the real cpu. This is for testing purposes only.
-        let program = encode(&String::from("ADC ($AABB)"));
-        // indirect mode is just an absolute address lookup by another name used for JMP
-        // instruction. So the resulting addressing constant will still MODE_ABS
-        assert_eq!(program[0], apply_address_mode(ADC, MODE_ABS));
+        let program = encode(&String::from("ADC ($AABB);"));
+        assert_eq!(program[0], apply_address_mode(ADC, MODE_IND));
         assert_eq!(program[1], 0xbb);
         assert_eq!(program[2], 0xaa);
 
-        let program = encode(&String::from("ADC ($AA,X)"));
+        let program = encode(&String::from("ADC ($AA,X);"));
         assert_eq!(program[0], apply_address_mode(ADC, MODE_INX));
         assert_eq!(program[1], 0xaa);
 
-        let program = encode(&String::from("ADC ($BB),Y"));
+        let program = encode(&String::from("ADC ($BB),Y;"));
         assert_eq!(program[0], apply_address_mode(ADC, MODE_INY));
         assert_eq!(program[1], 0xbb);
     }
