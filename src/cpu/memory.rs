@@ -22,6 +22,7 @@ impl Memory {
     }
 
     pub fn write(&mut self, address: usize, value: u8) {
+        println!("Write to {} value of {}", address, value);
         self.ram[address] = value;
     }
 

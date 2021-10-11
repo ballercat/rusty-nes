@@ -1,5 +1,5 @@
 use super::addressing::Mode;
-use super::base::{Processor, Reg, C_FLAG, N_FLAG, V_FLAG, Z_FLAG};
+use super::base::{Processor, Reg, C_FLAG, D_FLAG, N_FLAG, V_FLAG, Z_FLAG};
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -64,6 +64,8 @@ lazy_static! {
         m.insert("BVS", 0x70);
         m.insert("CLC", CLC);
         m.insert("SEC", SEC);
+        m.insert("SED", 0xf8);
+        m.insert("STA", 0x85);
         m.insert("NOP", NOP);
         m.insert("LDA", LDA);
 
@@ -124,14 +126,12 @@ pub fn encode(line: &String) -> Vec<u8> {
 
     let apply_regex = |regex: &Regex, mode: u8| {
         let captures = regex.captures(line).unwrap();
-        let opcode = apply_address_mode(
-            *OPCODE_HASHMAP.get(&captures["name"]).unwrap(),
-            mode,
-        );
+        let opcode_value =
+            *OPCODE_HASHMAP.get(&captures["name"]).unwrap_or(&NOP);
+        let opcode = apply_address_mode(opcode_value, mode);
         let mut result: Vec<u8> = Vec::new();
         result.push(opcode);
         for cap in captures.iter().skip(2) {
-            // println!("CAPTURE {}", &cap.unwrap().as_str());
             result
                 .push(u8::from_str_radix(&cap.unwrap().as_str(), 16).unwrap());
         }
@@ -191,7 +191,9 @@ impl Processor {
             (0, 4, 6) => (Processor::bne, Mode::Immediate),
             (0, 4, 7) => (Processor::beq, Mode::Immediate),
             (0, 6, 0) => (Processor::clc, Mode::Implied),
+            (0, 6, 6) => (Processor::cld, Mode::Implied),
             (0, 6, 1) => (Processor::sec, Mode::Implied),
+            (1, 1, 4) => (Processor::sta, Mode::ZeroPage),
             (1, 2, 1) => (Processor::and, Mode::Immediate),
             (1, 2, 3) => (Processor::adc, Mode::Immediate),
             (1, 2, 5) => (Processor::lda, Mode::Immediate),
@@ -335,8 +337,17 @@ impl Processor {
         self.update_cycles(cycles);
     }
 
+    pub fn brk(&mut self, _mode: Mode) {
+        println!("Not yet implemented");
+    }
+
     pub fn clc(&mut self, mode: Mode) {
         self.state.status &= !C_FLAG;
+        self.update_pc(opcode_len(mode)).update_cycles(2);
+    }
+
+    pub fn cld(&mut self, mode: Mode) {
+        self.state.status &= !D_FLAG;
         self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 
@@ -372,6 +383,12 @@ impl Processor {
 
     pub fn sec(&mut self, mode: Mode) {
         self.state.status |= C_FLAG;
+        self.update_pc(opcode_len(mode)).update_cycles(2);
+    }
+
+    pub fn sta(&mut self, mode: Mode) {
+        let operand = self.store(mode);
+        self.mem.write(operand as usize, self.get_reg(Reg::A));
         self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 

@@ -42,7 +42,14 @@ impl Processor {
 
         loop {
             let old_pc = self.state.pc;
-            self.exec();
+            let value = self.mem.read(self.state.pc);
+            // 0x00/Zero opcode is the BRK instruction
+            if value == 0x00 {
+                println!("Encountered BRK. Exiting.");
+                break;
+            }
+            let (opcode, mode) = self.decode(value);
+            opcode(self, mode);
 
             if old_pc == self.state.pc {
                 panic!("Program counter did not update, force quitting!");
@@ -63,12 +70,11 @@ impl Processor {
 
 #[cfg(test)]
 mod test {
-    use super::base::N_FLAG;
     use super::memory::ROM_START;
     use super::*;
 
     #[test]
-    fn test_adc() {
+    fn test_math() {
         let mut cpu = Processor::new(None);
         cpu.run_program(&String::from(
             "
@@ -79,11 +85,7 @@ mod test {
         ));
         // a + operand + carry_flag
         assert_eq!(cpu.state.a, 3, "ADC result should be {}", 3);
-    }
 
-    #[test]
-    fn test_and() {
-        let mut cpu = Processor::new(None);
         cpu.run_program(&String::from(
             "
         LDA #$03;
@@ -91,11 +93,7 @@ mod test {
         ));
 
         assert_eq!(cpu.state.a, 0b10, "AND result should be {}", 0b10);
-    }
 
-    #[test]
-    fn test_asl() {
-        let mut cpu = Processor::new(None);
         cpu.run_program(&String::from(
             "
         LDA #$02;
@@ -130,13 +128,13 @@ mod test {
         ));
         assert_eq!(cpu.state.pc, ROM_START, "Branch via BEQ");
 
-        // // Testing BIT as well as BMI below
-
-        cpu.mem.write(0xFF, N_FLAG); // write to zer-page address 0xff
+        // Testing BIT as well as BMI below
         cpu.run_program(&String::from(
             "
-        BIT $FF  ; bit test with value using zero-page
-        BMI !$FE ; branch
+        LDA #$80;
+        STA $FF ;
+        BIT $FF ; bit test with value using zero-page
+        BMI !$FA; branch -6
        ",
         ));
         assert_eq!(cpu.state.pc, ROM_START, "Branch via BMI");
@@ -164,5 +162,21 @@ mod test {
         ",
         ));
         assert_eq!(cpu.state.pc, ROM_START, "Branch via BPL");
+    }
+
+    #[test]
+    fn test_cld() {
+        let mut cpu = Processor::new(None);
+        cpu.run_program(&String::from(
+            "
+        LDA #$08; load bit 4 into A. This equals Decimal flag
+        STA $FF; save it at address 0xFF
+        SED    ;
+        CLD    ;
+        BRK    ; force exit
+        ",
+        ));
+
+        assert_eq!(cpu.state.status, 0);
     }
 }

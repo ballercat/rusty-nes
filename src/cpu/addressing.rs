@@ -32,4 +32,14 @@ impl Processor {
             Mode::Accumulator => self.state.a,
         }
     }
+
+    pub fn store(&mut self, mode: Mode) -> u8 {
+        match mode {
+            Mode::ZeroPage => {
+                self.cycles += 1;
+                self.mem.read(self.state.pc + 1)
+            }
+            _ => self.state.a,
+        }
+    }
 }
