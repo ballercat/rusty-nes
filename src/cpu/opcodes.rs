@@ -75,8 +75,16 @@ lazy_static! {
 
 pub fn opcode_len(mode: Mode) -> i32 {
     match mode {
-        Mode::Absolute => 3,
-        Mode::ZeroPage | Mode::Immediate => 2,
+        Mode::Absolute | Mode::AbsoluteX | Mode::AbsoluteY | Mode::Indirect => {
+            3
+        }
+        Mode::ZeroPage
+        | Mode::ZeroPageX
+        | Mode::ZeroPageY
+        | Mode::IndexedX
+        | Mode::IndexedY
+        | Mode::Relative
+        | Mode::Immediate => 2,
         _ => 1,
     }
 }
@@ -177,16 +185,10 @@ impl Processor {
         let b = (value & 0b0001_1100) >> 2;
         let c = value & 0b0000_0011;
 
-        // let get_addressing_mode_c1 = || match b {
-        //     0 => Mode::Indirect,
-        //     1 => Mode::ZeroPage,
-        //     2 => Mode::Immediate,
-        //     3 => Mode::Absolute,
-        //     4 => Mode::Indirect,
-        //     _ => Mode::Implied,
-        // };
-
         match (c, b, a) {
+            (0, 0, 0) => (Processor::brk, Mode::Implied),
+            (0, 0, 1) => (Processor::jsr, Mode::Absolute),
+            (0, 0, 2) => (Processor::rti, Mode::Implied),
             (0, 2, 0) => (Processor::php, Mode::Implied),
             (0, 2, 1) => (Processor::plp, Mode::Implied),
             (0, 2, 2) => (Processor::pha, Mode::Implied),
@@ -202,10 +204,29 @@ impl Processor {
             (0, 6, 0) => (Processor::clc, Mode::Implied),
             (0, 6, 6) => (Processor::cld, Mode::Implied),
             (0, 6, 1) => (Processor::sec, Mode::Implied),
-            (1, 1, 4) => (Processor::sta, Mode::ZeroPage),
-            (1, _, 1) => (Processor::and, Mode::Immediate),
-            (1, 2, 3) => (Processor::adc, Mode::Immediate),
-            (1, 2, 5) => (Processor::lda, Mode::Immediate),
+            (1, _, _) => {
+                let mode = match b {
+                    0 => Mode::Indirect,
+                    1 => Mode::ZeroPage,
+                    2 => Mode::Immediate,
+                    3 => Mode::Absolute,
+                    4 => Mode::Indirect,
+                    5 => Mode::ZeroPageX,
+                    6 => Mode::AbsoluteX,
+                    7 => Mode::AbsoluteY,
+                    _ => panic!("Cannot decode instruction: {}", value),
+                };
+
+                let instruction = match a {
+                    4 => Processor::sta,
+                    1 => Processor::and,
+                    3 => Processor::adc,
+                    5 => Processor::lda,
+                    _ => Processor::nop,
+                };
+
+                (instruction, mode)
+            }
             (2, 2, 0) => (Processor::asl, Mode::Accumulator),
             (2, 2, 7) => (Processor::nop, Mode::Implied),
             _ => (Processor::nop, Mode::Implied),
@@ -369,6 +390,17 @@ impl Processor {
         self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 
+    pub fn jsr(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let pch = self.state.pc >> 8;
+        let pcl = self.state.pc & 0xff;
+
+        self.stack_push(pch as u8);
+        self.stack_push(pcl as u8);
+
+        self.jump(address).update_cycles(4);
+    }
+
     pub fn lda(&mut self, mode: Mode) {
         let address = self.lookup(mode);
         let operand = self.mem.read(address);
@@ -398,6 +430,17 @@ impl Processor {
     pub fn plp(&mut self, mode: Mode) {
         self.state.status = self.stack_pop();
         self.update_pc(opcode_len(mode)).update_cycles(3);
+    }
+
+    pub fn rti(&mut self, _mode: Mode) {
+        // FIXME: break flag & bit 5 should be ignored from the pop-ed status
+        let status = self.stack_pop();
+        let pcl = self.stack_pop() as usize;
+        let pch = self.stack_pop() as usize;
+        let new_pc = pcl & (pch << 8);
+
+        self.state.status = status;
+        self.jump(new_pc).update_cycles(6);
     }
 
     pub fn sec(&mut self, mode: Mode) {

@@ -85,6 +85,11 @@ impl Processor {
         self
     }
 
+    pub fn jump(&mut self, new_pc: usize) -> &mut Self {
+        self.state.pc = new_pc;
+        self
+    }
+
     pub fn get_reg(&self, reg: Reg) -> u8 {
         match reg {
             Reg::X => self.state.x,
