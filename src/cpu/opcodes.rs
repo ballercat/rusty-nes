@@ -177,6 +177,15 @@ impl Processor {
         let b = (value & 0b0001_1100) >> 2;
         let c = value & 0b0000_0011;
 
+        // let get_addressing_mode_c1 = || match b {
+        //     0 => Mode::Indirect,
+        //     1 => Mode::ZeroPage,
+        //     2 => Mode::Immediate,
+        //     3 => Mode::Absolute,
+        //     4 => Mode::Indirect,
+        //     _ => Mode::Implied,
+        // };
+
         match (c, b, a) {
             (0, 2, 0) => (Processor::php, Mode::Implied),
             (0, 2, 1) => (Processor::plp, Mode::Implied),
@@ -194,7 +203,7 @@ impl Processor {
             (0, 6, 6) => (Processor::cld, Mode::Implied),
             (0, 6, 1) => (Processor::sec, Mode::Implied),
             (1, 1, 4) => (Processor::sta, Mode::ZeroPage),
-            (1, 2, 1) => (Processor::and, Mode::Immediate),
+            (1, _, 1) => (Processor::and, Mode::Immediate),
             (1, 2, 3) => (Processor::adc, Mode::Immediate),
             (1, 2, 5) => (Processor::lda, Mode::Immediate),
             (2, 2, 0) => (Processor::asl, Mode::Accumulator),
@@ -204,13 +213,10 @@ impl Processor {
     }
 
     pub fn adc(&mut self, mode: Mode) {
-        let operand = self.lookup(mode);
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
         let accumulator = self.state.a;
         let carry = self.state.status & 1;
-        println!(
-            "operand {} accumulator {} carry {}",
-            operand, accumulator, carry
-        );
         let (mut result, ..) = accumulator.overflowing_add(operand);
         result += carry;
         self.set_reg(Reg::A, result)
@@ -225,7 +231,8 @@ impl Processor {
     }
 
     pub fn and(&mut self, mode: Mode) {
-        let operand = self.lookup(mode);
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
         let accumulator = self.get_reg(Reg::A);
         let result = accumulator & operand;
         self.set_reg(Reg::A, result)
@@ -235,10 +242,14 @@ impl Processor {
     }
 
     pub fn asl(&mut self, mode: Mode) {
-        let operand = self.lookup(mode);
+        let address = self.lookup(mode);
+        // FIXME: this isn't ideal when mode is accumulator the logic is altered heavily
+        let operand = match mode {
+            Mode::Accumulator => self.state.a,
+            _ => self.mem.read(address),
+        };
         let result = operand << 1;
 
-        println!("ASL: operand {} result {}", operand, result);
         match mode {
             Mode::Accumulator => {
                 self.set_reg(Reg::A, result);
@@ -252,7 +263,8 @@ impl Processor {
     }
 
     pub fn bcc(&mut self, mode: Mode) {
-        let operand = self.lookup(mode);
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
         let mut cycles = 2;
         if self.state.status & C_FLAG == 0 {
             cycles += 1;
@@ -265,7 +277,8 @@ impl Processor {
     }
 
     pub fn bcs(&mut self, mode: Mode) {
-        let operand = self.lookup(mode);
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
         let mut cycles = 2;
         if self.state.status & C_FLAG != 0 {
             cycles += 1;
@@ -277,7 +290,8 @@ impl Processor {
     }
 
     pub fn beq(&mut self, mode: Mode) {
-        let operand = self.lookup(mode);
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
         let mut cycles = 2;
         if self.state.status & Z_FLAG != 0 {
             cycles += 1;
@@ -289,7 +303,8 @@ impl Processor {
     }
 
     pub fn bit(&mut self, mode: Mode) {
-        let operand = self.lookup(mode);
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
         let accumulator = self.state.a;
         let result = operand & accumulator;
 
@@ -302,7 +317,8 @@ impl Processor {
     }
 
     pub fn bmi(&mut self, mode: Mode) {
-        let operand = self.lookup(mode);
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
         let mut cycles = 2;
         if self.state.status & N_FLAG != 0 {
             cycles += 1;
@@ -314,7 +330,8 @@ impl Processor {
     }
 
     pub fn bne(&mut self, mode: Mode) {
-        let operand = self.lookup(mode);
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
         let mut cycles = 2;
         if self.state.status & Z_FLAG == 0 {
             cycles += 1;
@@ -326,7 +343,8 @@ impl Processor {
     }
 
     pub fn bpl(&mut self, mode: Mode) {
-        let operand = self.lookup(mode);
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
         let mut cycles = 2;
         if self.state.status & N_FLAG == 0 {
             cycles += 1;
@@ -352,7 +370,8 @@ impl Processor {
     }
 
     pub fn lda(&mut self, mode: Mode) {
-        let operand = self.lookup(mode);
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
 
         self.set_reg(Reg::A, operand)
             .update_pc(opcode_len(mode))
@@ -387,8 +406,8 @@ impl Processor {
     }
 
     pub fn sta(&mut self, mode: Mode) {
-        let operand = self.store(mode);
-        self.mem.write(operand as usize, self.get_reg(Reg::A));
+        let address = self.lookup(mode);
+        self.mem.write(address, self.get_reg(Reg::A));
         self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 
