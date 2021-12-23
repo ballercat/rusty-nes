@@ -198,12 +198,21 @@ impl Processor {
             (0, 2, 3) => (Processor::pla, Mode::Implied),
             (0, 1, 1) => (Processor::bit, Mode::ZeroPage),
             (0, 3, 1) => (Processor::bit, Mode::Absolute),
-            (0, 4, 0) => (Processor::bpl, Mode::Immediate),
-            (0, 4, 1) => (Processor::bmi, Mode::Immediate),
-            (0, 4, 4) => (Processor::bcc, Mode::Immediate),
-            (0, 4, 5) => (Processor::bcs, Mode::Immediate),
-            (0, 4, 6) => (Processor::bne, Mode::Immediate),
-            (0, 4, 7) => (Processor::beq, Mode::Immediate),
+            // Branches
+            (0, 4, _) => {
+                let instruction = match a {
+                    0 => Processor::bpl,
+                    1 => Processor::bmi,
+                    2 => Processor::bvc,
+                    3 => Processor::bvs,
+                    4 => Processor::bcc,
+                    5 => Processor::bcs,
+                    6 => Processor::bne,
+                    7 => Processor::beq,
+                    _ => panic!("Cannot decode instruction: {}", value),
+                };
+                (instruction, Mode::Relative)
+            }
             (0, 6, 0) => (Processor::clc, Mode::Implied),
             (0, 6, 6) => (Processor::cld, Mode::Implied),
             (0, 6, 1) => (Processor::sec, Mode::Implied),
@@ -287,43 +296,37 @@ impl Processor {
     }
 
     pub fn bcc(&mut self, mode: Mode) {
-        let address = self.lookup(mode);
-        let operand = self.mem.read(address);
-        let mut cycles = 2;
         if self.state.status & C_FLAG == 0 {
-            cycles += 1;
-            self.update_pc(operand as i8 as i32);
+            // Jump location lookup costs cycles but these are "free" if the
+            // jump will not occur. That's why the lookup must be done AFTER
+            // checking the condition above. This is true for all branch opcodes
+            let address = self.lookup(mode);
+            self.jump(address);
         } else {
             self.update_pc(opcode_len(mode));
         }
 
-        self.update_cycles(cycles);
+        self.update_cycles(2);
     }
 
     pub fn bcs(&mut self, mode: Mode) {
-        let address = self.lookup(mode);
-        let operand = self.mem.read(address);
-        let mut cycles = 2;
         if self.state.status & C_FLAG != 0 {
-            cycles += 1;
-            self.update_pc(operand as i8 as i32);
+            let address = self.lookup(mode);
+            self.jump(address);
         } else {
             self.update_pc(opcode_len(mode));
         }
-        self.update_cycles(cycles);
+        self.update_cycles(2);
     }
 
     pub fn beq(&mut self, mode: Mode) {
-        let address = self.lookup(mode);
-        let operand = self.mem.read(address);
-        let mut cycles = 2;
         if self.state.status & Z_FLAG != 0 {
-            cycles += 1;
-            self.update_pc(operand as i8 as i32);
+            let address = self.lookup(mode);
+            self.jump(address);
         } else {
             self.update_pc(opcode_len(mode));
         }
-        self.update_cycles(cycles);
+        self.update_cycles(2);
     }
 
     pub fn bit(&mut self, mode: Mode) {
@@ -341,49 +344,60 @@ impl Processor {
     }
 
     pub fn bmi(&mut self, mode: Mode) {
-        let address = self.lookup(mode);
-        let operand = self.mem.read(address);
-        let mut cycles = 2;
         if self.state.status & N_FLAG != 0 {
-            cycles += 1;
-            self.update_pc(operand as i8 as i32);
+            let address = self.lookup(mode);
+            self.jump(address);
         } else {
             self.update_pc(opcode_len(mode));
         }
-        self.update_cycles(cycles);
+        self.update_cycles(2);
     }
 
     pub fn bne(&mut self, mode: Mode) {
-        let address = self.lookup(mode);
-        let operand = self.mem.read(address);
-        let mut cycles = 2;
         if self.state.status & Z_FLAG == 0 {
-            cycles += 1;
-            self.update_pc(operand as i8 as i32);
+            let address = self.lookup(mode);
+            self.jump(address);
         } else {
             self.update_pc(opcode_len(mode));
         }
-        self.update_cycles(cycles);
+        self.update_cycles(2);
     }
 
     pub fn bpl(&mut self, mode: Mode) {
-        let address = self.lookup(mode);
-        let operand = self.mem.read(address);
-        let mut cycles = 2;
         if self.state.status & N_FLAG == 0 {
-            cycles += 1;
-            self.update_pc(operand as i8 as i32);
+            let address = self.lookup(mode);
+            self.jump(address);
         } else {
             self.update_pc(opcode_len(mode));
         }
-        self.update_cycles(cycles);
+        self.update_cycles(2);
     }
 
     pub fn brk(&mut self, _mode: Mode) {
         self.stack_push(self.state.status | F_FLAG | B_FLAG);
         self.state.status |= I_FLAG;
 
-        println!("Not yet implemented");
+        println!("BRK not yet implemented");
+    }
+
+    pub fn bvc(&mut self, mode: Mode) {
+        if self.state.status & V_FLAG == 0 {
+            let address = self.lookup(mode);
+            self.jump(address);
+        } else {
+            self.update_pc(opcode_len(mode));
+        }
+        self.update_cycles(2);
+    }
+
+    pub fn bvs(&mut self, mode: Mode) {
+        if self.state.status & V_FLAG == 1 {
+            let address = self.lookup(mode);
+            self.jump(address);
+        } else {
+            self.update_pc(opcode_len(mode));
+        }
+        self.update_cycles(2);
     }
 
     pub fn clc(&mut self, mode: Mode) {

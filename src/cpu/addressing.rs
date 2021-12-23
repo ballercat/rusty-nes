@@ -1,6 +1,6 @@
 use super::base::Processor;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Mode {
     ZeroPage,
     Absolute,
@@ -91,22 +91,19 @@ impl Processor {
             }
             Mode::Relative => {
                 self.cycles += 1;
-                let offset = self.mem.read(self.state.pc + 1) as i32;
+                // Read as i8 is important as a negative 8 bit value will fit
+                // into a 32 bit signed integer and become a positive
+                let offset = self.mem.read(self.state.pc + 1) as i8 as i32;
                 let address = if offset.is_negative() {
                     self.state.pc - offset.wrapping_abs() as usize
                 } else {
                     self.state.pc + offset as usize
                 };
+                // Crossing a page boundary with a jump will cause an extra cycle
                 if address >> 8 > self.state.pc >> 8 {
                     self.cycles += 1;
                 }
-
-                // FIXME: THiS IS A TEMPORARY HACK
-                // branch instructions were written before the addressing mode
-                // so they perform their own update math instead of using the
-                // address value above. This needs to be changed. For now returning
-                // the immediate operand address and calling it a day
-                self.state.pc + 1
+                address
             }
             Mode::ZeroPage => {
                 self.cycles += 1;
