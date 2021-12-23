@@ -1,5 +1,8 @@
 use super::addressing::Mode;
-use super::base::{Processor, Reg, C_FLAG, D_FLAG, N_FLAG, V_FLAG, Z_FLAG};
+use super::base::{
+    Processor, Reg, B_FLAG, C_FLAG, D_FLAG, F_FLAG, I_FLAG, N_FLAG, V_FLAG,
+    Z_FLAG,
+};
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -377,6 +380,9 @@ impl Processor {
     }
 
     pub fn brk(&mut self, _mode: Mode) {
+        self.stack_push(self.state.status | F_FLAG | B_FLAG);
+        self.state.status |= I_FLAG;
+
         println!("Not yet implemented");
     }
 
@@ -418,7 +424,10 @@ impl Processor {
     }
 
     pub fn php(&mut self, mode: Mode) {
-        self.stack_push(self.state.status);
+        // https://wiki.nesdev.org/w/index.php?title=Status_flags
+        // bit 5 & 4 of the status byte pushed onto the stack must be set
+        // without having a side-effect on the contents of status itself
+        self.stack_push(self.state.status | B_FLAG | F_FLAG);
         self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 

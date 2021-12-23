@@ -2,9 +2,10 @@ use super::memory::{Memory, ZERO_PAGE_TOP};
 
 pub const N_FLAG: u8 = 0b1000_0000;
 pub const V_FLAG: u8 = 0b0100_0000;
-// const B_FLAG: u8 = 0b0001_0000;
+pub const B_FLAG: u8 = 0b0001_0000; // See PHP/BRK etc
+pub const F_FLAG: u8 = 0b0010_0000; // f for five not a real flag
 pub const D_FLAG: u8 = 0b0000_1000;
-// const I_FLAG: u8 = 0b0000_0100;
+pub const I_FLAG: u8 = 0b0000_0100;
 pub const Z_FLAG: u8 = 0b0000_0010;
 pub const C_FLAG: u8 = 0b0000_0001;
 pub const SIGN_BIT: u8 = 0b1000_0000;
