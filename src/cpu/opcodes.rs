@@ -3,7 +3,7 @@ use super::base::{
     Processor, Reg, B_FLAG, C_FLAG, D_FLAG, F_FLAG, I_FLAG, N_FLAG, V_FLAG,
     Z_FLAG,
 };
-use memory::IRQ_BRK_VECTOR;
+use super::memory::IRQ_BRK_VECTOR;
 use regex::Regex;
 use std::collections::HashMap;
 
