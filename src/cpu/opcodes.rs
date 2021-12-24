@@ -3,6 +3,7 @@ use super::base::{
     Processor, Reg, B_FLAG, C_FLAG, D_FLAG, F_FLAG, I_FLAG, N_FLAG, V_FLAG,
     Z_FLAG,
 };
+use memory::IRQ_BRK_VECTOR;
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -374,10 +375,14 @@ impl Processor {
     }
 
     pub fn brk(&mut self, _mode: Mode) {
+        let pch = (self.state.pc >> 8) as u8;
+        let pcl = (self.state.pc & 0xFF) as u8;
+        self.stack_push(pch);
+        self.stack_push(pcl);
         self.stack_push(self.state.status | F_FLAG | B_FLAG);
         self.state.status |= I_FLAG;
 
-        println!("BRK not yet implemented");
+        self.update_cycles(7).jump(IRQ_BRK_VECTOR);
     }
 
     pub fn bvc(&mut self, mode: Mode) {
@@ -456,8 +461,8 @@ impl Processor {
     }
 
     pub fn rti(&mut self, _mode: Mode) {
-        // FIXME: break flag & bit 5 should be ignored from the pop-ed status
-        let status = self.stack_pop();
+        // break flag & bit 5 should be ignored from the pop-ed status
+        let status = self.stack_pop() & (!F_FLAG | !B_FLAG);
         let pcl = self.stack_pop() as usize;
         let pch = self.stack_pop() as usize;
         let new_pc = pcl & (pch << 8);

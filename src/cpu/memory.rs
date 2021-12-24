@@ -8,6 +8,8 @@ pub const STACK_TOP: usize = 0x200;
 #[allow(dead_code)]
 pub const RESET_VECTOR: usize = 0xFFFC;
 #[allow(dead_code)]
+pub const IRQ_BRK_VECTOR: usize = 0xFFFE;
+#[allow(dead_code)]
 pub const ROM_START: usize = 0x8000;
 
 pub struct Memory {
