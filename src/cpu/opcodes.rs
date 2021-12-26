@@ -190,9 +190,14 @@ impl Processor {
         let c = value & 0b0000_0011;
 
         match (c, b, a) {
+            // c0 is a mess and it's easier to decode by hand
             (0, 0, 0) => (Processor::brk, Mode::Implied),
             (0, 0, 1) => (Processor::jsr, Mode::Absolute),
             (0, 0, 2) => (Processor::rti, Mode::Implied),
+            (0, 0, 3) => (Processor::rts, Mode::Implied),
+            (0, 0, 5) => (Processor::ldy, Mode::Immediate),
+            (0, 0, 6) => (Processor::cpy, Mode::Immediate),
+            (0, 0, 7) => (Processor::cpx, Mode::Immediate),
             (0, 2, 0) => (Processor::php, Mode::Implied),
             (0, 2, 1) => (Processor::plp, Mode::Implied),
             (0, 2, 2) => (Processor::pha, Mode::Implied),
@@ -415,6 +420,28 @@ impl Processor {
         self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 
+    pub fn cpx(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
+        let x = self.state.x;
+        let result = x - operand;
+
+        self.update_status(operand, x, result, N_FLAG | Z_FLAG | C_FLAG)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
+    }
+
+    pub fn cpy(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
+        let y = self.state.x;
+        let result = y - operand;
+
+        self.update_status(operand, y, result, N_FLAG | Z_FLAG | C_FLAG)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
+    }
+
     pub fn jsr(&mut self, mode: Mode) {
         let address = self.lookup(mode);
         let pch = self.state.pc >> 8;
@@ -471,6 +498,14 @@ impl Processor {
         self.jump(new_pc).update_cycles(6);
     }
 
+    pub fn rts(&mut self, _mode: Mode) {
+        let pcl = self.stack_pop() as usize;
+        let pch = self.stack_pop() as usize;
+        let new_pc = pcl & (pch << 8);
+        self.jump(new_pc);
+        self.update_cycles(6).update_pc(1);
+    }
+
     pub fn sec(&mut self, mode: Mode) {
         self.state.status |= C_FLAG;
         self.update_pc(opcode_len(mode)).update_cycles(2);
@@ -480,6 +515,17 @@ impl Processor {
         let address = self.lookup(mode);
         self.mem.write(address, self.get_reg(Reg::A));
         self.update_pc(opcode_len(mode)).update_cycles(2);
+    }
+
+    pub fn ldy(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
+
+        self.state.y = operand;
+
+        self.update_pc(opcode_len(mode))
+            .update_cycles(2)
+            .update_status(operand, operand, operand, N_FLAG | Z_FLAG);
     }
 
     pub fn nop(&mut self, mode: Mode) {
