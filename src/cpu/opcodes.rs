@@ -297,8 +297,41 @@ impl Processor {
 
                 (instruction, mode)
             }
-            (2, 2, 0) => (Processor::asl, Mode::Accumulator),
-            (2, 2, 7) => (Processor::nop, Mode::Implied),
+            (2, _, _) => {
+                if a == 5 && b == 0 {
+                    return (Processor::ldx, Mode::Immediate);
+                }
+                if b == 6 {
+                    return match a {
+                        4 => (Processor::txs, Mode::Implied),
+                        5 => (Processor::tsx, Mode::Implied),
+                        _ => panic!("Cannot decode opcode {}", value),
+                    };
+                }
+
+                let instruction = match a {
+                    0 => Processor::asl,
+                    1 => Processor::rol,
+                    2 => Processor::lsr,
+                    3 => Processor::ror,
+                    4 => Processor::stx,
+                    5 => Processor::ldx,
+                    6 => Processor::dec,
+                    7 => Processor::inc,
+                    _ => panic!("Cannot decode opcode {}", value),
+                };
+
+                let mode = match b {
+                    1 => Mode::ZeroPage,
+                    2 => Mode::Implied,
+                    3 => Mode::Absolute,
+                    5 => Mode::ZeroPageX,
+                    7 => Mode::AbsoluteX,
+                    _ => panic!("Cannot decode opcode {}", value),
+                };
+
+                (instruction, mode)
+            }
             _ => (Processor::nop, Mode::Implied),
         }
     }
@@ -504,6 +537,17 @@ impl Processor {
             .update_cycles(2);
     }
 
+    pub fn dec(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
+        let result = operand - 1;
+        self.mem.write(address, result);
+        self.update_n_flag(result)
+            .update_z_flag(result)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
+    }
+
     pub fn dey(&mut self, mode: Mode) {
         let y = self.state.y;
         let result = y - 1;
@@ -512,6 +556,17 @@ impl Processor {
             .update_n_flag(result)
             .update_pc(opcode_len(mode))
             .update_pc(1);
+    }
+
+    pub fn inc(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
+        let result = operand + 1;
+        self.mem.write(address, result);
+        self.update_n_flag(result)
+            .update_z_flag(result)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
     }
 
     pub fn inx(&mut self, _mode: Mode) {
@@ -562,6 +617,29 @@ impl Processor {
             .update_cycles(2);
     }
 
+    pub fn ldx(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
+        self.set_reg(Reg::X, operand)
+            .update_n_flag(operand)
+            .update_z_flag(operand)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
+    }
+
+    pub fn lsr(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = match mode {
+            Mode::Accumulator => self.state.a,
+            _ => self.mem.read(address),
+        };
+        let result = operand >> 1;
+
+        self.update_status(operand, operand, result, N_FLAG | C_FLAG | Z_FLAG)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
+    }
+
     pub fn pha(&mut self, mode: Mode) {
         self.stack_push(self.state.a);
 
@@ -584,6 +662,32 @@ impl Processor {
     pub fn plp(&mut self, mode: Mode) {
         self.state.status = self.stack_pop();
         self.update_pc(opcode_len(mode)).update_cycles(3);
+    }
+
+    pub fn rol(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = match mode {
+            Mode::Accumulator => self.state.a,
+            _ => self.mem.read(address),
+        };
+        let result = operand.rotate_left(1);
+
+        self.update_status(operand, operand, result, N_FLAG | C_FLAG | Z_FLAG)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
+    }
+
+    pub fn ror(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = match mode {
+            Mode::Accumulator => self.state.a,
+            _ => self.mem.read(address),
+        };
+        let result = operand.rotate_right(1);
+
+        self.update_status(operand, operand, result, N_FLAG | C_FLAG | Z_FLAG)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
     }
 
     pub fn rti(&mut self, _mode: Mode) {
@@ -635,6 +739,13 @@ impl Processor {
         self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 
+    pub fn stx(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let x = self.state.x;
+        self.mem.write(address, x);
+        self.update_pc(opcode_len(mode)).update_cycles(2);
+    }
+
     pub fn tay(&mut self, mode: Mode) {
         self.state.y = self.state.a;
         self.update_status(
@@ -656,6 +767,18 @@ impl Processor {
         self.update_pc(opcode_len(mode))
             .update_cycles(2)
             .update_status(operand, operand, operand, N_FLAG | Z_FLAG);
+    }
+
+    pub fn tsx(&mut self, mode: Mode) {
+        self.set_reg(Reg::X, self.state.sp)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
+    }
+
+    pub fn txs(&mut self, mode: Mode) {
+        self.set_reg(Reg::S, self.state.x)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
     }
 
     pub fn tya(&mut self, mode: Mode) {
