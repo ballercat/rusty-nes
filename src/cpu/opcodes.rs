@@ -198,12 +198,51 @@ impl Processor {
             (0, 0, 5) => (Processor::ldy, Mode::Immediate),
             (0, 0, 6) => (Processor::cpy, Mode::Immediate),
             (0, 0, 7) => (Processor::cpx, Mode::Immediate),
-            (0, 2, 0) => (Processor::php, Mode::Implied),
-            (0, 2, 1) => (Processor::plp, Mode::Implied),
-            (0, 2, 2) => (Processor::pha, Mode::Implied),
-            (0, 2, 3) => (Processor::pla, Mode::Implied),
-            (0, 1, 1) => (Processor::bit, Mode::ZeroPage),
-            (0, 3, 1) => (Processor::bit, Mode::Absolute),
+            (0, 1, _) => {
+                let instruction = match a {
+                    1 => Processor::bit,
+                    4 => Processor::sty,
+                    5 => Processor::ldy,
+                    6 => Processor::cpy,
+                    7 => Processor::cpx,
+                    _ => panic!("Cannot decode instruction {}", value),
+                };
+                (instruction, Mode::ZeroPage)
+            }
+            (0, 2, _) => {
+                let instruction = match a {
+                    0 => Processor::php,
+                    1 => Processor::plp,
+                    2 => Processor::pha,
+                    3 => Processor::pla,
+                    4 => Processor::dey,
+                    5 => Processor::tay,
+                    6 => Processor::iny,
+                    7 => Processor::inx,
+                    _ => panic!("Cannot decode instruction {}", value),
+                };
+
+                (instruction, Mode::Implied)
+            }
+
+            (0, 3, _) => {
+                let instruction = match a {
+                    1 => Processor::bit,
+                    2 => Processor::jmp,
+                    3 => Processor::jmp,
+                    4 => Processor::sty,
+                    5 => Processor::ldy,
+                    6 => Processor::cpy,
+                    7 => Processor::cpx,
+                    _ => panic!("Cannot decode instruction {}", value),
+                };
+                let mode = match a {
+                    3 => Mode::Indirect,
+                    _ => Mode::Absolute,
+                };
+
+                (instruction, mode)
+            }
             // Branches
             (0, 4, _) => {
                 let instruction = match a {
@@ -219,9 +258,22 @@ impl Processor {
                 };
                 (instruction, Mode::Relative)
             }
-            (0, 6, 0) => (Processor::clc, Mode::Implied),
-            (0, 6, 6) => (Processor::cld, Mode::Implied),
-            (0, 6, 1) => (Processor::sec, Mode::Implied),
+            (0, 5, 4) => (Processor::sty, Mode::ZeroPage),
+            (0, 5, 5) => (Processor::ldy, Mode::ZeroPage),
+            (0, 6, _) => {
+                let instruction = match a {
+                    0 => Processor::clc,
+                    1 => Processor::sec,
+                    2 => Processor::cli,
+                    3 => Processor::sei,
+                    4 => Processor::tya,
+                    5 => Processor::clv,
+                    6 => Processor::cld,
+                    7 => Processor::sed,
+                    _ => panic!("Cannot decode instruction: {}", value),
+                };
+                (instruction, Mode::Implied)
+            }
             (1, _, _) => {
                 let mode = match b {
                     0 => Mode::Indirect,
@@ -420,6 +472,16 @@ impl Processor {
         self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 
+    pub fn cli(&mut self, mode: Mode) {
+        self.state.status &= !I_FLAG;
+        self.update_pc(opcode_len(mode)).update_cycles(2);
+    }
+
+    pub fn clv(&mut self, mode: Mode) {
+        self.state.status &= V_FLAG;
+        self.update_pc(opcode_len(mode)).update_cycles(2);
+    }
+
     pub fn cpx(&mut self, mode: Mode) {
         let address = self.lookup(mode);
         let operand = self.mem.read(address);
@@ -442,6 +504,42 @@ impl Processor {
             .update_cycles(2);
     }
 
+    pub fn dey(&mut self, mode: Mode) {
+        let y = self.state.y;
+        let result = y - 1;
+
+        self.update_z_flag(result)
+            .update_n_flag(result)
+            .update_pc(opcode_len(mode))
+            .update_pc(1);
+    }
+
+    pub fn inx(&mut self, _mode: Mode) {
+        let result = self.state.x + 1;
+        self.state.x = result;
+
+        self.update_z_flag(result)
+            .update_n_flag(result)
+            .update_pc(1)
+            .update_cycles(2);
+    }
+
+    pub fn iny(&mut self, _mode: Mode) {
+        let result = self.state.y + 1;
+        self.state.y = result;
+
+        self.update_z_flag(result)
+            .update_n_flag(result)
+            .update_pc(1)
+            .update_cycles(2);
+    }
+
+    pub fn jmp(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+
+        self.jump(address);
+    }
+
     pub fn jsr(&mut self, mode: Mode) {
         let address = self.lookup(mode);
         let pch = self.state.pc >> 8;
@@ -459,7 +557,8 @@ impl Processor {
 
         self.set_reg(Reg::A, operand)
             .update_pc(opcode_len(mode))
-            .update_status(operand, operand, operand, Z_FLAG | N_FLAG)
+            .update_n_flag(operand)
+            .update_z_flag(operand)
             .update_cycles(2);
     }
 
@@ -511,10 +610,41 @@ impl Processor {
         self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 
+    pub fn sed(&mut self, mode: Mode) {
+        self.state.status |= D_FLAG;
+        self.update_pc(opcode_len(mode)).update_cycles(2);
+    }
+
+    pub fn sei(&mut self, mode: Mode) {
+        self.state.status |= I_FLAG;
+        self.update_pc(opcode_len(mode)).update_cycles(2);
+    }
+
     pub fn sta(&mut self, mode: Mode) {
         let address = self.lookup(mode);
         self.mem.write(address, self.get_reg(Reg::A));
         self.update_pc(opcode_len(mode)).update_cycles(2);
+    }
+
+    pub fn sty(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let y = self.state.y;
+
+        self.mem.write(address, y);
+
+        self.update_pc(opcode_len(mode)).update_cycles(2);
+    }
+
+    pub fn tay(&mut self, mode: Mode) {
+        self.state.y = self.state.a;
+        self.update_status(
+            self.state.y,
+            self.state.y,
+            self.state.y,
+            N_FLAG | Z_FLAG,
+        )
+        .update_pc(opcode_len(mode))
+        .update_cycles(2);
     }
 
     pub fn ldy(&mut self, mode: Mode) {
@@ -526,6 +656,16 @@ impl Processor {
         self.update_pc(opcode_len(mode))
             .update_cycles(2)
             .update_status(operand, operand, operand, N_FLAG | Z_FLAG);
+    }
+
+    pub fn tya(&mut self, mode: Mode) {
+        let y = self.state.y;
+        self.state.a = y;
+
+        self.update_pc(opcode_len(mode))
+            .update_n_flag(y)
+            .update_z_flag(y)
+            .update_cycles(2);
     }
 
     pub fn nop(&mut self, mode: Mode) {

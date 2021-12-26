@@ -115,6 +115,24 @@ impl Processor {
         self
     }
 
+    pub fn update_n_flag(&mut self, value: u8) -> &mut Self {
+        if value & SIGN_BIT != 0 {
+            self.state.status |= N_FLAG;
+        } else {
+            self.state.status &= !N_FLAG;
+        }
+        self
+    }
+
+    pub fn update_z_flag(&mut self, value: u8) -> &mut Self {
+        if value == 0 {
+            self.state.status |= Z_FLAG;
+        } else {
+            self.state.status &= !Z_FLAG;
+        }
+        self
+    }
+
     /**
      * Calculate new Status flag based on the operation
      */
