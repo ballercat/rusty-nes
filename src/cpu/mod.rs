@@ -1,6 +1,6 @@
 mod addressing;
 pub mod base;
-mod memory;
+pub mod memory;
 mod opcodes;
 
 use base::Processor;
@@ -19,6 +19,9 @@ impl Processor {
     pub fn exec(&mut self) {
         let value = self.mem.read(self.state.pc);
         let (opcode, mode) = self.decode(value);
+        // let start = self.state.pc;
+        // let end = start + opcode_len(mode) as usize;
+        // let full = &self.mem.ram[start..end];
         println!("{:#04x}: {:#04x}", self.state.pc, value);
         opcode(self, mode);
     }

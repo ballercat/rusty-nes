@@ -12,8 +12,9 @@ pub const IRQ_BRK_VECTOR: usize = 0xFFFE;
 #[allow(dead_code)]
 pub const ROM_START: usize = 0x8000;
 
+#[derive(Debug)]
 pub struct Memory {
-    ram: [u8; MEMORY_MAX],
+    pub ram: [u8; MEMORY_MAX],
 }
 
 impl Memory {
@@ -24,7 +25,6 @@ impl Memory {
     }
 
     pub fn write(&mut self, address: usize, value: u8) {
-        println!("Write to {} value of {}", address, value);
         self.ram[address] = value;
     }
 

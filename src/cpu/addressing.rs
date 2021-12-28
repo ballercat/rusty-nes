@@ -23,15 +23,15 @@ impl Processor {
             Mode::Accumulator => self.state.a as usize,
             Mode::Absolute => {
                 self.cycles += 2;
-                let high = self.mem.read(self.state.pc + 1) as usize;
-                let low = self.mem.read(self.state.pc + 2) as usize;
+                let high = self.mem.read(self.state.pc + 2) as usize;
+                let low = self.mem.read(self.state.pc + 1) as usize;
                 low | (high << 8)
             }
             Mode::AbsoluteX => {
                 self.cycles += 2;
                 let carry = self.state.status & 1;
-                let high = self.mem.read(self.state.pc + 1) as usize;
-                let low = self.mem.read(self.state.pc + 2) as usize;
+                let high = self.mem.read(self.state.pc + 2) as usize;
+                let low = self.mem.read(self.state.pc + 1) as usize;
                 let address = (low | (high << 8))
                     + carry as u32 as usize
                     + self.state.x as u32 as usize;
@@ -43,8 +43,8 @@ impl Processor {
             Mode::AbsoluteY => {
                 self.cycles += 2;
                 let carry = self.state.status & 1;
-                let high = self.mem.read(self.state.pc + 1) as usize;
-                let low = self.mem.read(self.state.pc + 2) as usize;
+                let high = self.mem.read(self.state.pc + 2) as usize;
+                let low = self.mem.read(self.state.pc + 1) as usize;
                 let address = (low | (high << 8))
                     + carry as u32 as usize
                     + self.state.y as u32 as usize;
@@ -60,8 +60,8 @@ impl Processor {
             }
             Mode::Indirect => {
                 self.cycles += 5;
-                let high = self.mem.read(self.state.pc + 1) as usize;
-                let low = self.mem.read(self.state.pc + 2) as usize;
+                let high = self.mem.read(self.state.pc + 2) as usize;
+                let low = self.mem.read(self.state.pc + 1) as usize;
                 self.mem.read(low | (high << 8)) as usize
             }
             Mode::IndexedX => {
@@ -111,10 +111,10 @@ impl Processor {
             }
             Mode::ZeroPageX => {
                 self.cycles += 2;
-                let address = (0xFF
-                    & (self.mem.read(self.state.pc + 1) + self.state.x))
-                    as usize;
-                address
+                let address =
+                    self.mem.read(self.state.pc + 1).wrapping_add(self.state.x);
+
+                address as usize
             }
             Mode::ZeroPageY => {
                 self.cycles += 2;

@@ -49,7 +49,6 @@ pub const MODE_ABY: u8 = 0b0001_1000;
 pub const MODE_ABX: u8 = 0b0001_1100;
 
 pub type Opcode = fn(&mut Processor, Mode) -> ();
-
 lazy_static! {
     static ref OPCODE_HASHMAP: HashMap<&'static str, u8> = {
         let mut m = HashMap::new();
@@ -234,7 +233,7 @@ impl Processor {
                     5 => Processor::ldy,
                     6 => Processor::cpy,
                     7 => Processor::cpx,
-                    _ => panic!("Cannot decode instruction {}", value),
+                    _ => panic!("Cannot decode opcode {:#04x}", value),
                 };
                 let mode = match a {
                     3 => Mode::Indirect,
@@ -254,7 +253,7 @@ impl Processor {
                     5 => Processor::bcs,
                     6 => Processor::bne,
                     7 => Processor::beq,
-                    _ => panic!("Cannot decode instruction: {}", value),
+                    _ => panic!("Cannot decode opcode {:#04x}", value),
                 };
                 (instruction, Mode::Relative)
             }
@@ -270,7 +269,7 @@ impl Processor {
                     5 => Processor::clv,
                     6 => Processor::cld,
                     7 => Processor::sed,
-                    _ => panic!("Cannot decode instruction: {}", value),
+                    _ => panic!("Cannot decode opcode {:#04x}", value),
                 };
                 (instruction, Mode::Implied)
             }
@@ -284,7 +283,7 @@ impl Processor {
                     5 => Mode::ZeroPageX,
                     6 => Mode::AbsoluteX,
                     7 => Mode::AbsoluteY,
-                    _ => panic!("Cannot decode instruction: {}", value),
+                    _ => panic!("Cannot decode opcode {:#04x}", value),
                 };
 
                 let instruction = match a {
@@ -297,6 +296,10 @@ impl Processor {
 
                 (instruction, mode)
             }
+            (2, 0, 0) => (Processor::jam, Mode::Implied),
+            (2, 0, 1) => (Processor::jam, Mode::Implied),
+            (2, 0, 2) => (Processor::jam, Mode::Implied),
+            (2, 0, 3) => (Processor::jam, Mode::Implied),
             (2, _, _) => {
                 if a == 5 && b == 0 {
                     return (Processor::ldx, Mode::Immediate);
@@ -305,7 +308,7 @@ impl Processor {
                     return match a {
                         4 => (Processor::txs, Mode::Implied),
                         5 => (Processor::tsx, Mode::Implied),
-                        _ => panic!("Cannot decode opcode {}", value),
+                        _ => panic!("Cannot decode opcode {:#04x}", value),
                     };
                 }
 
@@ -318,7 +321,7 @@ impl Processor {
                     5 => Processor::ldx,
                     6 => Processor::dec,
                     7 => Processor::inc,
-                    _ => panic!("Cannot decode opcode {}", value),
+                    _ => panic!("Cannot decode opcode {:#04x}", value),
                 };
 
                 let mode = match b {
@@ -327,10 +330,26 @@ impl Processor {
                     3 => Mode::Absolute,
                     5 => Mode::ZeroPageX,
                     7 => Mode::AbsoluteX,
-                    _ => panic!("Cannot decode opcode {}", value),
+                    _ => panic!("Cannot decode opcode {:#04x}", value),
                 };
 
                 (instruction, mode)
+            }
+            // "Illegal" opcodes
+            // DCP
+            (3, _, 6) => {
+                let mode = match b {
+                    0 => Mode::IndexedX,
+                    1 => Mode::ZeroPage,
+                    3 => Mode::Absolute,
+                    4 => Mode::IndexedY,
+                    5 => Mode::ZeroPageX,
+                    6 => Mode::AbsoluteY,
+                    7 => Mode::AbsoluteX,
+                    _ => panic!("Unable to decode opcode {}", value),
+                };
+
+                (Processor::dcp, mode)
             }
             _ => (Processor::nop, Mode::Implied),
         }
@@ -467,8 +486,8 @@ impl Processor {
     pub fn brk(&mut self, _mode: Mode) {
         let pch = (self.state.pc >> 8) as u8;
         let pcl = (self.state.pc & 0xFF) as u8;
-        self.stack_push(pch);
         self.stack_push(pcl);
+        self.stack_push(pch);
         self.stack_push(self.state.status | F_FLAG | B_FLAG);
         self.state.status |= I_FLAG;
 
@@ -537,6 +556,23 @@ impl Processor {
             .update_cycles(2);
     }
 
+    pub fn dcp(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
+        println!("operand {}", operand);
+        self.mem.write(address, operand.wrapping_sub(1));
+        let result = self.state.a.wrapping_sub(operand.wrapping_sub(1));
+
+        self.update_status(
+            operand,
+            self.state.a,
+            result,
+            N_FLAG | Z_FLAG | C_FLAG,
+        )
+        .update_pc(opcode_len(mode))
+        .update_cycles(4);
+    }
+
     pub fn dec(&mut self, mode: Mode) {
         let address = self.lookup(mode);
         let operand = self.mem.read(address);
@@ -580,13 +616,22 @@ impl Processor {
     }
 
     pub fn iny(&mut self, _mode: Mode) {
-        let result = self.state.y + 1;
+        let result = self.state.y.wrapping_add(1);
         self.state.y = result;
 
         self.update_z_flag(result)
             .update_n_flag(result)
             .update_pc(1)
             .update_cycles(2);
+    }
+
+    pub fn jam(&mut self, _mode: Mode) {
+        println!(
+            "NESTEST 02h: {:#04x} 03h: {:#04x}",
+            self.mem.read(0x02),
+            self.mem.read(0x03)
+        );
+        panic!("JAM instruction encountered.");
     }
 
     pub fn jmp(&mut self, mode: Mode) {
@@ -600,8 +645,8 @@ impl Processor {
         let pch = self.state.pc >> 8;
         let pcl = self.state.pc & 0xff;
 
-        self.stack_push(pch as u8);
         self.stack_push(pcl as u8);
+        self.stack_push(pch as u8);
 
         self.jump(address).update_cycles(4);
     }
@@ -693,20 +738,21 @@ impl Processor {
     pub fn rti(&mut self, _mode: Mode) {
         // break flag & bit 5 should be ignored from the pop-ed status
         let status = self.stack_pop() & (!F_FLAG | !B_FLAG);
-        let pcl = self.stack_pop() as usize;
         let pch = self.stack_pop() as usize;
-        let new_pc = pcl & (pch << 8);
+        let pcl = self.stack_pop() as usize;
+        let new_pc = pcl | (pch << 8);
 
         self.state.status = status;
         self.jump(new_pc).update_cycles(6);
     }
 
     pub fn rts(&mut self, _mode: Mode) {
-        let pcl = self.stack_pop() as usize;
         let pch = self.stack_pop() as usize;
-        let new_pc = pcl & (pch << 8);
-        self.jump(new_pc);
-        self.update_cycles(6).update_pc(1);
+        let pcl = self.stack_pop() as usize;
+        println!("PCH {:#04x} PCL {:#04x}", pch, pcl);
+        let new_pc = pcl | (pch << 8);
+
+        self.jump(new_pc).update_cycles(6).update_pc(1);
     }
 
     pub fn sec(&mut self, mode: Mode) {

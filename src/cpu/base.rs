@@ -17,7 +17,7 @@ pub enum Reg {
     S,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct State {
     pub a: u8,
     pub sp: u8,
@@ -58,6 +58,7 @@ impl Processor {
     }
 
     pub fn stack_push(&mut self, value: u8) {
+        println!("stack_push() {:#04x}:{:#04x}", self.stack_top(), value);
         self.mem.write(self.stack_top(), value);
         self.state.sp = if self.state.sp == 0 {
             0xff
@@ -67,17 +68,18 @@ impl Processor {
     }
 
     pub fn stack_pop(&mut self) -> u8 {
-        let result = self.mem.read(self.stack_top());
         self.state.sp = if self.state.sp == 0xff {
             0
         } else {
             self.state.sp + 1
         };
+        let result = self.mem.read(self.stack_top());
+        println!("stack_pop() {:#04x}:{:#04x}", self.stack_top(), result);
         result
     }
 
     pub fn update_pc(&mut self, delta: i32) -> &mut Self {
-        println!("Update pc {:#04x} with {}", self.state.pc, delta);
+        // println!("Update pc {:#04x} with {}", self.state.pc, delta);
         if delta.is_negative() {
             self.state.pc -= delta.wrapping_abs() as u32 as usize;
         } else {
