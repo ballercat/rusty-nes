@@ -95,9 +95,9 @@ impl Processor {
                 // into a 32 bit signed integer and become a positive
                 let offset = self.mem.read(self.state.pc + 1) as i8 as i32;
                 let address = if offset.is_negative() {
-                    self.state.pc - offset.wrapping_abs() as usize
+                    self.state.pc + 2 - offset.wrapping_abs() as usize
                 } else {
-                    self.state.pc + offset as usize
+                    self.state.pc + 2 + offset as usize
                 };
                 // Crossing a page boundary with a jump will cause an extra cycle
                 if address >> 8 > self.state.pc >> 8 {

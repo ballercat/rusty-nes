@@ -7,6 +7,8 @@ use base::Processor;
 use memory::{RESET_VECTOR, ROM_START};
 use opcodes::encode;
 
+use crate::cpu::opcodes::opcode_len;
+
 impl Processor {
     pub fn reset(&mut self) {
         let lower = self.mem.read(RESET_VECTOR) as usize;
@@ -22,7 +24,14 @@ impl Processor {
         // let start = self.state.pc;
         // let end = start + opcode_len(mode) as usize;
         // let full = &self.mem.ram[start..end];
-        println!("{:#04x}: {:#04x}", self.state.pc, value);
+        let len = opcode_len(mode);
+
+        match len {
+            3 => println!("{:04X}  {:02X} {:02X} {:02X}", self.state.pc, value, self.mem.read(self.state.pc + 1), self.mem.read(self.state.pc + 2)),
+            2 => println!("{:04X}  {:02X} {:02X}", self.state.pc, value, self.mem.read(self.state.pc + 1)),
+            _ => println!("{:04X}  {:02X}", self.state.pc, value),
+        }
+
         opcode(self, mode);
     }
 

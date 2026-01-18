@@ -430,6 +430,7 @@ impl Processor {
     }
 
     pub fn beq(&mut self, mode: Mode) {
+        println!("BEQ {:08b}", self.state.status & Z_FLAG);
         if self.state.status & Z_FLAG != 0 {
             let address = self.lookup(mode);
             self.jump(address);
@@ -505,7 +506,7 @@ impl Processor {
     }
 
     pub fn bvs(&mut self, mode: Mode) {
-        if self.state.status & V_FLAG == 1 {
+        if self.state.status & V_FLAG == V_FLAG {
             let address = self.lookup(mode);
             self.jump(address);
         } else {
@@ -642,9 +643,9 @@ impl Processor {
 
     pub fn jsr(&mut self, mode: Mode) {
         let address = self.lookup(mode);
-        let pch = self.state.pc >> 8;
-        let pcl = self.state.pc & 0xff;
-
+        let new_pc = self.state.pc + 2;
+        let pch = new_pc >> 8;
+        let pcl =  new_pc & 0xff;
         self.stack_push(pcl as u8);
         self.stack_push(pch as u8);
 
@@ -749,7 +750,7 @@ impl Processor {
     pub fn rts(&mut self, _mode: Mode) {
         let pch = self.stack_pop() as usize;
         let pcl = self.stack_pop() as usize;
-        println!("PCH {:#04x} PCL {:#04x}", pch, pcl);
+        // println!("PCH {:#04x} PCL {:#04x}", pch, pcl);
         let new_pc = pcl | (pch << 8);
 
         self.jump(new_pc).update_cycles(6).update_pc(1);
@@ -838,7 +839,7 @@ impl Processor {
     }
 
     pub fn nop(&mut self, mode: Mode) {
-        println!("NOP");
+         println!("NOP");
         self.update_pc(opcode_len(mode)).update_cycles(1);
     }
 }

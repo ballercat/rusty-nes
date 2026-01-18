@@ -58,7 +58,7 @@ impl Processor {
     }
 
     pub fn stack_push(&mut self, value: u8) {
-        println!("stack_push() {:#04x}:{:#04x}", self.stack_top(), value);
+        // println!("stack_push() {:#04x}:{:#04x}", self.stack_top(), value);
         self.mem.write(self.stack_top(), value);
         self.state.sp = if self.state.sp == 0 {
             0xff
@@ -74,7 +74,7 @@ impl Processor {
             self.state.sp + 1
         };
         let result = self.mem.read(self.stack_top());
-        println!("stack_pop() {:#04x}:{:#04x}", self.stack_top(), result);
+        // println!("stack_pop() {:#04x}:{:#04x}", self.stack_top(), result);
         result
     }
 
