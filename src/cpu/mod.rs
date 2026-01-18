@@ -2,10 +2,12 @@ mod addressing;
 pub mod base;
 pub mod memory;
 mod opcodes;
+mod debug;
 
 use base::Processor;
 use memory::{RESET_VECTOR, ROM_START};
 use opcodes::encode;
+use debug::opcode_name;
 
 use crate::cpu::opcodes::opcode_len;
 
@@ -25,11 +27,12 @@ impl Processor {
         // let end = start + opcode_len(mode) as usize;
         // let full = &self.mem.ram[start..end];
         let len = opcode_len(mode);
+        let pad = " ".repeat(2);
 
         match len {
-            3 => println!("{:04X}  {:02X} {:02X} {:02X}", self.state.pc, value, self.mem.read(self.state.pc + 1), self.mem.read(self.state.pc + 2)),
-            2 => println!("{:04X}  {:02X} {:02X}", self.state.pc, value, self.mem.read(self.state.pc + 1)),
-            _ => println!("{:04X}  {:02X}", self.state.pc, value),
+            3 => println!("{:04X}  {:02X} {:02X} {:02X}  {}", self.state.pc, value, self.mem.read(self.state.pc + 1), self.mem.read(self.state.pc + 2), opcode_name(value)),
+            2 => println!("{:04X}  {:02X} {:02X} {}  {}", self.state.pc, value, self.mem.read(self.state.pc + 1), pad, opcode_name(value)),
+            _ => println!("{:04X}  {:02X} {} {}  {}", self.state.pc, value, pad, pad, opcode_name(value)),
         }
 
         opcode(self, mode);

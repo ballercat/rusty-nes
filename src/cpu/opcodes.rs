@@ -304,6 +304,9 @@ impl Processor {
                 if a == 5 && b == 0 {
                     return (Processor::ldx, Mode::Immediate);
                 }
+                if b == 2 && a == 7 {
+                    return (Processor::nop, Mode::Implied);
+                }
                 if b == 6 {
                     return match a {
                         4 => (Processor::txs, Mode::Implied),
@@ -351,7 +354,7 @@ impl Processor {
 
                 (Processor::dcp, mode)
             }
-            _ => (Processor::nop, Mode::Implied),
+            _ => (Processor::jam, Mode::Implied),
         }
     }
 
@@ -430,7 +433,6 @@ impl Processor {
     }
 
     pub fn beq(&mut self, mode: Mode) {
-        println!("BEQ {:08b}", self.state.status & Z_FLAG);
         if self.state.status & Z_FLAG != 0 {
             let address = self.lookup(mode);
             self.jump(address);
@@ -535,13 +537,22 @@ impl Processor {
         self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 
+    pub fn cmp(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
+        let result = self.state.a.wrapping_sub(operand);
+
+        self.update_status(operand, self.state.a, result, N_FLAG | Z_FLAG | C_FLAG)
+           .update_pc(opcode_len(mode))
+           .update_cycles(2);
+    }
+
     pub fn cpx(&mut self, mode: Mode) {
         let address = self.lookup(mode);
         let operand = self.mem.read(address);
-        let x = self.state.x;
-        let result = x - operand;
+        let result = self.state.x.wrapping_sub(operand);
 
-        self.update_status(operand, x, result, N_FLAG | Z_FLAG | C_FLAG)
+        self.update_status(operand, self.state.x, result, N_FLAG | Z_FLAG | C_FLAG)
             .update_pc(opcode_len(mode))
             .update_cycles(2);
     }
@@ -549,10 +560,9 @@ impl Processor {
     pub fn cpy(&mut self, mode: Mode) {
         let address = self.lookup(mode);
         let operand = self.mem.read(address);
-        let y = self.state.x;
-        let result = y - operand;
+        let result = self.state.y.wrapping_sub(operand);
 
-        self.update_status(operand, y, result, N_FLAG | Z_FLAG | C_FLAG)
+        self.update_status(operand, self.state.y, result, N_FLAG | Z_FLAG | C_FLAG)
             .update_pc(opcode_len(mode))
             .update_cycles(2);
     }
@@ -607,7 +617,7 @@ impl Processor {
     }
 
     pub fn inx(&mut self, _mode: Mode) {
-        let result = self.state.x + 1;
+        let result = self.state.x.wrapping_add(1);
         self.state.x = result;
 
         self.update_z_flag(result)
@@ -839,7 +849,6 @@ impl Processor {
     }
 
     pub fn nop(&mut self, mode: Mode) {
-         println!("NOP");
         self.update_pc(opcode_len(mode)).update_cycles(1);
     }
 }
