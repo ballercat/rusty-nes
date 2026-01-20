@@ -1,3 +1,5 @@
+use crate::cpu::base::SIGN_BIT;
+
 use super::addressing::Mode;
 use super::base::{
     Processor, Reg, B_FLAG, C_FLAG, D_FLAG, F_FLAG, I_FLAG, N_FLAG, V_FLAG,
@@ -287,11 +289,15 @@ impl Processor {
                 };
 
                 let instruction = match a {
-                    4 => Processor::sta,
+                    0 => Processor::ora,
                     1 => Processor::and,
+                    2 => Processor::eor,
                     3 => Processor::adc,
+                    4 => Processor::sta,
                     5 => Processor::lda,
-                    _ => Processor::nop,
+                    6 => Processor::cmp,
+                    7 => Processor::sbc,
+                    _ => Processor::jam,
                 };
 
                 (instruction, mode)
@@ -300,6 +306,9 @@ impl Processor {
             (2, 0, 1) => (Processor::jam, Mode::Implied),
             (2, 0, 2) => (Processor::jam, Mode::Implied),
             (2, 0, 3) => (Processor::jam, Mode::Implied),
+            (2, 2, 4) => (Processor::txa, Mode::Implied),
+            (2, 2, 5) => (Processor::tax, Mode::Implied),
+            (2, 2, 6) => (Processor::dex, Mode::Implied),
             (2, _, _) => {
                 if a == 5 && b == 0 {
                     return (Processor::ldx, Mode::Immediate);
@@ -361,18 +370,16 @@ impl Processor {
     pub fn adc(&mut self, mode: Mode) {
         let address = self.lookup(mode);
         let operand = self.mem.read(address);
-        let accumulator = self.state.a;
-        let carry = self.state.status & 1;
-        let (mut result, ..) = accumulator.overflowing_add(operand);
-        result += carry;
-        self.set_reg(Reg::A, result)
+        let lhs : u8 = self.state.a;
+        let (r1, c1) = lhs.overflowing_add(operand);
+        let (result, c2) = r1.overflowing_add(self.state.status & 1);
+
+        self.set_z(result == 0)
+            .set_n(result & SIGN_BIT > 0)
+            .set_carry(c1 || c2)
+            .update_v(lhs, operand, result)
+            .set_reg(Reg::A, result)
             .update_pc(opcode_len(mode))
-            .update_status(
-                accumulator,
-                operand,
-                result,
-                N_FLAG | Z_FLAG | C_FLAG | V_FLAG,
-            )
             .update_cycles(2);
     }
 
@@ -381,6 +388,7 @@ impl Processor {
         let operand = self.mem.read(address);
         let accumulator = self.get_reg(Reg::A);
         let result = accumulator & operand;
+
         self.set_reg(Reg::A, result)
             .update_pc(opcode_len(mode))
             .update_status(accumulator, operand, result, N_FLAG | Z_FLAG)
@@ -533,17 +541,20 @@ impl Processor {
     }
 
     pub fn clv(&mut self, mode: Mode) {
-        self.state.status &= V_FLAG;
+        self.state.status &= !V_FLAG;
         self.update_pc(opcode_len(mode)).update_cycles(2);
     }
 
     pub fn cmp(&mut self, mode: Mode) {
         let address = self.lookup(mode);
         let operand = self.mem.read(address);
-        let result = self.state.a.wrapping_sub(operand);
 
-        self.update_status(operand, self.state.a, result, N_FLAG | Z_FLAG | C_FLAG)
-           .update_pc(opcode_len(mode))
+        let result = self.state.a.wrapping_sub(operand);
+        self.set_carry(self.state.a >= operand);
+        self.set_z(operand == self.state.a);
+        self.set_n((result & SIGN_BIT) > 0);
+
+        self.update_pc(opcode_len(mode))
            .update_cycles(2);
     }
 
@@ -552,8 +563,11 @@ impl Processor {
         let operand = self.mem.read(address);
         let result = self.state.x.wrapping_sub(operand);
 
-        self.update_status(operand, self.state.x, result, N_FLAG | Z_FLAG | C_FLAG)
-            .update_pc(opcode_len(mode))
+        self.set_carry(self.state.x >= operand);
+        self.set_z(operand == self.state.x);
+        self.set_n((result & SIGN_BIT) > 0);
+
+        self.update_pc(opcode_len(mode))
             .update_cycles(2);
     }
 
@@ -562,8 +576,11 @@ impl Processor {
         let operand = self.mem.read(address);
         let result = self.state.y.wrapping_sub(operand);
 
-        self.update_status(operand, self.state.y, result, N_FLAG | Z_FLAG | C_FLAG)
-            .update_pc(opcode_len(mode))
+        self.set_carry(self.state.y >= operand);
+        self.set_z(operand == self.state.y);
+        self.set_n((result & SIGN_BIT) > 0);
+
+        self.update_pc(opcode_len(mode))
             .update_cycles(2);
     }
 
@@ -597,12 +614,36 @@ impl Processor {
 
     pub fn dey(&mut self, mode: Mode) {
         let y = self.state.y;
-        let result = y - 1;
+        let result = y.wrapping_sub(1);
 
         self.update_z_flag(result)
             .update_n_flag(result)
+            .set_reg(Reg::Y, result)
             .update_pc(opcode_len(mode))
-            .update_pc(1);
+            .update_cycles(2);
+    }
+
+    pub fn dex(&mut self, mode: Mode) {
+        let x = self.state.x;
+        let result = x.wrapping_sub(1);
+
+        self.update_z_flag(result)
+            .update_n_flag(result)
+            .set_reg(Reg::X, result)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
+    }
+
+    pub fn eor(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
+        let result = self.state.a ^ operand;
+
+        self.update_z_flag(result)
+            .update_n_flag(result)
+            .set_reg(Reg::A, result)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
     }
 
     pub fn inc(&mut self, mode: Mode) {
@@ -639,8 +680,8 @@ impl Processor {
     pub fn jam(&mut self, _mode: Mode) {
         println!(
             "NESTEST 02h: {:#04x} 03h: {:#04x}",
-            self.mem.read(0x02),
-            self.mem.read(0x03)
+            self.mem.read(0x00),
+            self.mem.read(0x01)
         );
         panic!("JAM instruction encountered.");
     }
@@ -696,6 +737,17 @@ impl Processor {
             .update_cycles(2);
     }
 
+    pub fn ora(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = self.mem.read(address);
+        let result = self.state.a | operand;
+        self.update_n_flag(result)
+            .update_z_flag(result)
+            .set_reg(Reg::A, result)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
+    }
+
     pub fn pha(&mut self, mode: Mode) {
         self.stack_push(self.state.a);
 
@@ -711,12 +763,17 @@ impl Processor {
     }
 
     pub fn pla(&mut self, mode: Mode) {
-        self.state.a = self.stack_pop();
-        self.update_pc(opcode_len(mode)).update_cycles(3);
+        let value = self.stack_pop();
+
+        self.update_n_flag(value)
+            .update_z_flag(value)
+            .set_reg(Reg::A, value)
+            .update_pc(opcode_len(mode))
+            .update_cycles(3);
     }
 
     pub fn plp(&mut self, mode: Mode) {
-        self.state.status = self.stack_pop();
+        self.state.status = (self.stack_pop() & !B_FLAG) | F_FLAG;
         self.update_pc(opcode_len(mode)).update_cycles(3);
     }
 
@@ -764,6 +821,22 @@ impl Processor {
         let new_pc = pcl | (pch << 8);
 
         self.jump(new_pc).update_cycles(6).update_pc(1);
+    }
+
+    pub fn sbc(&mut self, mode: Mode) {
+        let address = self.lookup(mode);
+        let operand = !self.mem.read(address);
+        let lhs : u8 = self.state.a;
+        let (r1, c1) = lhs.overflowing_add(operand);
+        let (result, c2) = r1.overflowing_add(self.state.status & 1);
+
+        self.set_z(result == 0)
+            .set_n(result & SIGN_BIT > 0)
+            .set_carry(c1 || c2)
+            .update_v(lhs, operand, result)
+            .set_reg(Reg::A, result)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
     }
 
     pub fn sec(&mut self, mode: Mode) {
@@ -815,6 +888,24 @@ impl Processor {
         .update_cycles(2);
     }
 
+    pub fn tax(&mut self, mode: Mode) {
+        let value = self.state.a;
+        self.update_n_flag(value)
+            .update_z_flag(value)
+            .set_reg(Reg::X, value)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
+    }
+
+    pub fn txa(&mut self, mode: Mode) {
+        let value = self.state.x;
+        self.update_n_flag(value)
+            .update_z_flag(value)
+            .set_reg(Reg::A, value)
+            .update_pc(opcode_len(mode))
+            .update_cycles(2);
+    }
+
     pub fn ldy(&mut self, mode: Mode) {
         let address = self.lookup(mode);
         let operand = self.mem.read(address);
@@ -827,13 +918,16 @@ impl Processor {
     }
 
     pub fn tsx(&mut self, mode: Mode) {
-        self.set_reg(Reg::X, self.state.sp)
+        let value = self.state.sp;
+        self.update_n_flag(value)
+            .update_z_flag(value)
+            .set_reg(Reg::X, value)
             .update_pc(opcode_len(mode))
             .update_cycles(2);
     }
 
     pub fn txs(&mut self, mode: Mode) {
-        self.set_reg(Reg::S, self.state.x)
+        self.set_reg(Reg::SP, self.state.x)
             .update_pc(opcode_len(mode))
             .update_cycles(2);
     }

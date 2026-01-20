@@ -15,6 +15,7 @@ pub enum Reg {
     X,
     Y,
     S,
+    SP,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -58,7 +59,6 @@ impl Processor {
     }
 
     pub fn stack_push(&mut self, value: u8) {
-        // println!("stack_push() {:#04x}:{:#04x}", self.stack_top(), value);
         self.mem.write(self.stack_top(), value);
         self.state.sp = if self.state.sp == 0 {
             0xff
@@ -74,12 +74,10 @@ impl Processor {
             self.state.sp + 1
         };
         let result = self.mem.read(self.stack_top());
-        // println!("stack_pop() {:#04x}:{:#04x}", self.stack_top(), result);
         result
     }
 
     pub fn update_pc(&mut self, delta: i32) -> &mut Self {
-        // println!("Update pc {:#04x} with {}", self.state.pc, delta);
         if delta.is_negative() {
             self.state.pc -= delta.wrapping_abs() as u32 as usize;
         } else {
@@ -99,6 +97,7 @@ impl Processor {
             Reg::Y => self.state.y,
             Reg::A => self.state.a,
             Reg::S => self.state.status,
+            Reg::SP => self.state.sp,
         }
     }
 
@@ -108,6 +107,7 @@ impl Processor {
             Reg::Y => self.state.y = value,
             Reg::A => self.state.a = value,
             Reg::S => self.state.status = value,
+            Reg::SP => self.state.sp = value,
         };
         self
     }
@@ -135,6 +135,42 @@ impl Processor {
         self
     }
 
+    pub fn set_carry(&mut self, toggle: bool) -> &mut Self {
+        if toggle {
+            self.state.status |= C_FLAG;
+        } else {
+            self.state.status &= !C_FLAG;
+        }
+        self
+    }
+
+    pub fn set_z(&mut self, toggle: bool) -> &mut Self {
+        if toggle {
+            self.state.status |= Z_FLAG;
+        } else {
+            self.state.status &= !Z_FLAG;
+        }
+        self
+    }
+
+    pub fn set_n(&mut self, toggle: bool) -> &mut Self {
+        if toggle {
+            self.state.status |= N_FLAG;
+        } else {
+            self.state.status &= !N_FLAG;
+        }
+        self
+    }
+
+    pub fn update_v(&mut self, lhs: u8, rhs: u8, result: u8) -> &mut Self {
+        if !(lhs ^ rhs) & (lhs ^ result) & SIGN_BIT != 0 {
+            self.state.status |= V_FLAG;
+        } else {
+            self.state.status &= !V_FLAG;
+        }
+        self
+    }
+
     /**
      * Calculate new Status flag based on the operation
      */
@@ -146,35 +182,38 @@ impl Processor {
         flags: u8,
     ) -> &mut Self {
         let mut new_status = self.get_reg(Reg::S);
-        let mut merge_status = |flag: u8, value: bool| {
-            if value {
-                new_status |= flag
-            } else {
-                new_status &= !flag
-            }
-        };
 
         if flags & C_FLAG != 0 {
-            merge_status(C_FLAG, m as u16 + n as u16 > 0xFF);
+            if  m as u16 + n as u16 > 0xFF {
+                new_status |= C_FLAG;
+            } else {
+                new_status &= !C_FLAG;
+            }
         }
 
         if flags & Z_FLAG != 0 {
-            merge_status(Z_FLAG, result == 0);
+            if result == 0 {
+                new_status |= Z_FLAG;
+            } else {
+                new_status &= !Z_FLAG;
+            }
         }
 
         if flags & N_FLAG != 0 {
-            merge_status(N_FLAG, result & SIGN_BIT != 0);
+            if result & SIGN_BIT > 0 {
+                new_status |= SIGN_BIT;
+            } else {
+                new_status &= !SIGN_BIT;
+            }
         }
-
-        // Overflow logic is a bit more complicated
 
         // XOR-ing m & n is going to clear the SIGN_BIT if it's not == in BOTH
         if flags & V_FLAG != 0 {
-            let operands_match = ((m ^ n) & SIGN_BIT) == 0;
-            let result_operands_match = ((m ^ result) & SIGN_BIT) == 0;
-            let overflow = operands_match && !result_operands_match;
-
-            merge_status(V_FLAG, overflow);
+            if !(m ^ n) & (m ^ result) & SIGN_BIT != 0 {
+                new_status |= V_FLAG;
+            } else {
+                new_status &= !V_FLAG;
+            }
         }
 
         self.set_reg(Reg::S, new_status);

@@ -66,7 +66,7 @@ impl Nes {
     pub fn run(&mut self, reset_pc: Option<usize>) {
         let rom = &self.cartridge.rom;
         // User interaction here :)
-        println!("START NES");
+        // println!("START NES");
         let reset_vector = [
             (reset_pc.unwrap_or(ROM_START) & 0xFF) as u8,
             ((reset_pc.unwrap_or(ROM_START) & 0xFF00) >> 8) as u8,

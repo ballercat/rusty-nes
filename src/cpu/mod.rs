@@ -5,6 +5,7 @@ mod opcodes;
 mod debug;
 
 use base::Processor;
+use base::{I_FLAG, F_FLAG};
 use memory::{RESET_VECTOR, ROM_START};
 use opcodes::encode;
 use debug::opcode_name;
@@ -16,24 +17,22 @@ impl Processor {
         let lower = self.mem.read(RESET_VECTOR) as usize;
         let upper = self.mem.read(RESET_VECTOR + 1) as usize;
         self.state.pc = lower | (upper << 8);
-
-        self.state.sp = 0xff;
+        self.state.status = I_FLAG | F_FLAG;
+        self.state.sp = 0xfd;
     }
 
     pub fn exec(&mut self) {
         let value = self.mem.read(self.state.pc);
         let (opcode, mode) = self.decode(value);
-        // let start = self.state.pc;
-        // let end = start + opcode_len(mode) as usize;
-        // let full = &self.mem.ram[start..end];
         let len = opcode_len(mode);
         let pad = " ".repeat(2);
 
         match len {
-            3 => println!("{:04X}  {:02X} {:02X} {:02X}  {}", self.state.pc, value, self.mem.read(self.state.pc + 1), self.mem.read(self.state.pc + 2), opcode_name(value)),
-            2 => println!("{:04X}  {:02X} {:02X} {}  {}", self.state.pc, value, self.mem.read(self.state.pc + 1), pad, opcode_name(value)),
-            _ => println!("{:04X}  {:02X} {} {}  {}", self.state.pc, value, pad, pad, opcode_name(value)),
+            3 => print!(" {:04X}  {:02X} {:02X} {:02X}  {}", self.state.pc, value, self.mem.read(self.state.pc + 1), self.mem.read(self.state.pc + 2), opcode_name(value)),
+            2 => print!(" {:04X}  {:02X} {:02X} {}  {}", self.state.pc, value, self.mem.read(self.state.pc + 1), pad, opcode_name(value)),
+            _ => print!(" {:04X}  {:02X} {} {}  {}", self.state.pc, value, pad, pad, opcode_name(value)),
         }
+        println!("{}A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}", " ".repeat(29), self.state.a, self.state.x, self.state.y, self.state.status, self.state.sp);
 
         opcode(self, mode);
     }
