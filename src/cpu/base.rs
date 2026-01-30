@@ -28,6 +28,7 @@ pub struct State {
     pub status: u8,
 }
 
+#[derive(Debug)]
 pub struct Processor {
     pub mem: Memory,
     pub state: State,

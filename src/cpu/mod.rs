@@ -21,18 +21,24 @@ impl Processor {
         self.state.sp = 0xfd;
     }
 
-    pub fn exec(&mut self) {
-        let value = self.mem.read(self.state.pc);
-        let (opcode, mode) = self.decode(value);
+    pub fn debug_opcode(&mut self, loc: usize) -> (String, usize, i32) {
+        let value = self.mem.read(loc);
+        let (_opcode, mode) = self.decode(value);
         let len = opcode_len(mode);
         let pad = " ".repeat(2);
 
-        match len {
-            3 => print!(" {:04X}  {:02X} {:02X} {:02X}  {}", self.state.pc, value, self.mem.read(self.state.pc + 1), self.mem.read(self.state.pc + 2), opcode_name(value)),
-            2 => print!(" {:04X}  {:02X} {:02X} {}  {}", self.state.pc, value, self.mem.read(self.state.pc + 1), pad, opcode_name(value)),
-            _ => print!(" {:04X}  {:02X} {} {}  {}", self.state.pc, value, pad, pad, opcode_name(value)),
-        }
-        println!("{}A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}", " ".repeat(29), self.state.a, self.state.x, self.state.y, self.state.status, self.state.sp);
+        let message = match len {
+            3 => format!(" {:04X}  {:02X} {:02X} {:02X}  {}", loc, value, self.mem.read(loc + 1), self.mem.read(loc + 2), opcode_name(value)),
+            2 => format!(" {:04X}  {:02X} {:02X} {}  {}", loc, value, self.mem.read(loc + 1), pad, opcode_name(value)),
+            _ => format!(" {:04X}  {:02X} {} {}  {}", loc, value, pad, pad, opcode_name(value)),
+        };
+       // let message = format!("{}A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}", " ".repeat(29), self.state.a, self.state.x, self.state.y, self.state.status, self.state.sp);
+        (message, loc + len as usize, len)
+    }
+
+    pub fn exec(&mut self) {
+        let value = self.mem.read(self.state.pc);
+        let (opcode, mode) = self.decode(value);
 
         opcode(self, mode);
     }

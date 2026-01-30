@@ -7,6 +7,7 @@ const PRG_ROM_UNIT_SIZE: usize = KILOBYTE_BYTE_SIZE * 16;
 const HEADER_BYTE_SIZE: usize = 16;
 const TRAINER_BYTE_SIZE: usize = KILOBYTE_BYTE_SIZE / 2;
 
+#[derive(Debug)]
 pub struct Cartridge {
     pub header: String,
     pub rom: Vec<u8>,
@@ -33,6 +34,8 @@ impl Cartridge {
         self.rom = Vec::from_iter(data[rom_start..rom_end].iter().cloned());
     }
 }
+
+#[derive(Debug)]
 pub struct Nes {
     pub cartridge: Cartridge,
     pub cpu: Processor,
@@ -63,10 +66,9 @@ impl Nes {
         self.cartridge.load(&data);
     }
 
-    pub fn run(&mut self, reset_pc: Option<usize>) {
+    pub fn reset(&mut self, reset_pc: Option<usize>) {
         let rom = &self.cartridge.rom;
-        // User interaction here :)
-        // println!("START NES");
+
         let reset_vector = [
             (reset_pc.unwrap_or(ROM_START) & 0xFF) as u8,
             ((reset_pc.unwrap_or(ROM_START) & 0xFF00) >> 8) as u8,
@@ -82,7 +84,9 @@ impl Nes {
         self.cpu.mem.load(RESET_VECTOR, &reset_vector);
 
         self.cpu.reset();
+    }
 
+    pub fn run(&mut self) {
         let mut limit = 10000;
         loop {
             self.cpu.exec();
